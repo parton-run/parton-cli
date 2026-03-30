@@ -59,8 +59,8 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let project_ctx = parton_planner::build_project_context(project_root);
 
     // ── Step 1: Skeleton plan (with retry on validation failure) ──
-    style::print_header("Step 1 — Skeleton Plan");
-    let skeleton = {
+    style::print_header("Step 1 — Plan");
+    let plan = {
         let mut last_error = String::new();
         let mut result = None;
         for attempt in 0..2 {
@@ -73,44 +73,29 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                 )
             };
             let spin = spinner::Spinner::start(if attempt == 0 {
-                "Generating contracts..."
+                "Generating plan..."
             } else {
-                "Retrying plan..."
+                "Retrying..."
             });
             let skel = rt.block_on(async {
                 parton_planner::generate_skeleton(&prompt, &project_ctx, &*planning_provider).await
-            }).map_err(|e| anyhow::anyhow!("skeleton failed: {e}"))?;
+            }).map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
             spin.stop();
 
             match parton_planner::validate_plan(&skel, project_root) {
-                Ok(()) => {
-                    result = Some(skel);
-                    break;
-                }
+                Ok(()) => { result = Some(skel); break; }
                 Err(e) => {
-                    style::print_err(&format!("Plan validation: {e}"));
+                    style::print_err(&format!("Validation: {e}"));
                     last_error = e.to_string();
                 }
             }
         }
-        result.ok_or_else(|| anyhow::anyhow!("plan validation failed after retry: {last_error}"))?
+        result.ok_or_else(|| anyhow::anyhow!("plan failed: {last_error}"))?
     };
-    style::print_ok(&format!("{} files planned", skeleton.files.len()));
-
-    // ── Step 2: Enrich plan (parallel) ──
-    style::print_header("Step 2 — Enrich Plan");
-    let labels: Vec<String> = skeleton.files.iter().map(|f| f.path.clone()).collect();
-    let enrich_prog = progress::ParallelProgress::new(&labels);
-    let _ticker = enrich_prog.start_ticker();
-
-    let mut plan = rt.block_on(async {
-        parton_planner::enrich_plan(&skeleton, &*planning_provider, &|path| {
-            enrich_prog.complete(path, 0, true);
-        }).await
-    }).map_err(|e| anyhow::anyhow!("enrich failed: {e}"))?;
-    drop(_ticker);
+    style::print_ok(&format!("{} files planned", plan.files.len()));
 
     // ── Plan review ──
+    let mut plan = plan;
     loop {
         match plan_review::run_review(plan.clone())? {
             plan_review::ReviewDecision::Approve => {
@@ -118,26 +103,13 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                 break;
             }
             plan_review::ReviewDecision::Replan(comments) => {
-                style::print_header("Replanning");
                 let comment_text = format_comments(&comments);
-                let replan_prompt = format!(
-                    "{enriched_prompt}\n\n## Review Feedback\n{comment_text}"
-                );
+                let replan_prompt = format!("{enriched_prompt}\n\n## Feedback\n{comment_text}");
                 let spin = spinner::Spinner::start("Replanning...");
-                let new_skeleton = rt.block_on(async {
+                plan = rt.block_on(async {
                     parton_planner::generate_skeleton(&replan_prompt, &project_ctx, &*planning_provider).await
                 }).map_err(|e| anyhow::anyhow!("replan failed: {e}"))?;
                 spin.stop();
-
-                let labels: Vec<String> = new_skeleton.files.iter().map(|f| f.path.clone()).collect();
-                let prog = progress::ParallelProgress::new(&labels);
-                let _t = prog.start_ticker();
-                plan = rt.block_on(async {
-                    parton_planner::enrich_plan(&new_skeleton, &*planning_provider, &|p| {
-                        prog.complete(p, 0, true);
-                    }).await
-                }).map_err(|e| anyhow::anyhow!("enrich failed: {e}"))?;
-                drop(_t);
                 style::print_ok(&format!("Revised: {} files", plan.files.len()));
             }
             plan_review::ReviewDecision::Reject => {
@@ -147,39 +119,51 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         }
     }
 
-    // ── Step 3: Scaffold execution (parallel) ──
-    style::print_header("Step 3 — Scaffold");
+    // ── Step 2: Scaffold+Enrich (parallel, combined) ──
+    style::print_header("Step 2 — Scaffold");
     let exec_labels: Vec<String> = plan.files.iter().map(|f| f.path.clone()).collect();
     let scaffold_prog = progress::ParallelProgress::new(&exec_labels);
     let _ticker = scaffold_prog.start_ticker();
 
     let scaffold_results = rt.block_on(async {
-        parton_executor::execute_streaming(
+        parton_executor::scaffold_streaming(
             &plan, &*exec_provider, project_root,
-            parton_executor::ExecMode::Scaffold, "",
             &|r| scaffold_prog.complete(&r.path, r.elapsed_ms, r.success),
         ).await
     });
     drop(_ticker);
 
-    // Write scaffolds to disk.
-    let scaffold_ok: Vec<FileResult> = scaffold_results.iter().filter(|r| r.success).cloned().collect();
-    let scaffold_written = parton_executor::write_results(&scaffold_ok, project_root).context("failed to write scaffolds")?;
+    // Write scaffold code to disk + update plan with enriched goals.
+    let mut enriched_plan = plan.clone();
+    let mut scaffold_written = Vec::new();
+    for sr in &scaffold_results {
+        if sr.success && !sr.code.is_empty() {
+            let full_path = project_root.join(&sr.path);
+            if let Some(parent) = full_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&full_path, &sr.code);
+            scaffold_written.push(sr.path.clone());
+        }
+        // Update enriched goal if provided.
+        if !sr.enriched_goal.is_empty() {
+            if let Some(file) = enriched_plan.files.iter_mut().find(|f| f.path == sr.path) {
+                file.goal = sr.enriched_goal.clone();
+            }
+        }
+    }
+    let scaffold_tokens: u32 = scaffold_results.iter().map(|r| r.tokens_used).sum();
 
-    // Install deps if planner specified a command.
+    // Install deps.
     if let Some(ref cmd) = plan.install_command {
         let spin = spinner::Spinner::start(&format!("Installing deps ({cmd})..."));
         let ok = parton_executor::run_install(cmd, project_root);
         spin.stop();
-        if ok {
-            style::print_ok("Dependencies installed");
-        } else {
-            style::print_err("Dependency install failed");
-        }
+        if ok { style::print_ok("Dependencies installed"); }
+        else { style::print_err("Install failed"); }
     }
 
-    // ── Step 4: Structure check ──
-    style::print_header("Step 4 — Structure Check");
+    // Structure check.
     let spin = spinner::Spinner::start("Checking structure...");
     let check = parton_executor::run_check(&plan.check_commands, project_root);
     spin.stop();
@@ -188,22 +172,21 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         style::print_ok("Structure compiles");
         String::new()
     } else {
-        style::print_err("Structure check failed — errors will be fixed in final execution:");
+        style::print_err("Structure errors — will fix in final execution:");
         for line in check.errors.lines().take(10) {
             eprintln!("    {}", style::dim(line));
         }
         check.errors
     };
 
-    // ── Step 5: Final execution — only logic files, config files stay as scaffold ──
-    // Config files (json, html, css, config.*) are already final from scaffold.
-    let mut final_plan = plan.clone();
+    // ── Step 3: Final execution (only logic files) ──
+    let mut final_plan = enriched_plan.clone();
     final_plan.files.retain(needs_final_execution);
-    let skipped = plan.files.len() - final_plan.files.len();
+    let skipped = enriched_plan.files.len() - final_plan.files.len();
 
-    style::print_header("Step 5 — Final Execution");
+    style::print_header("Step 3 — Final Execution");
     if skipped > 0 {
-        style::print_ok(&format!("{skipped} config files kept from scaffold"));
+        style::print_ok(&format!("{skipped} files kept from scaffold"));
     }
 
     let final_labels: Vec<String> = final_plan.files.iter().map(|f| f.path.clone()).collect();
@@ -275,7 +258,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
 
     // ── Summary ──
     let elapsed = start.elapsed();
-    let scaffold_tokens: u32 = scaffold_results.iter().map(|r| r.tokens_used).sum();
     let final_tokens: u32 = final_results.iter().map(|r| r.tokens_used).sum();
     let total_tokens = scaffold_tokens + final_tokens;
     let failed = final_results.iter().filter(|r| !r.success).count();

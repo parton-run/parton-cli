@@ -1,31 +1,37 @@
-//! Scaffold execution — generate minimal compilable stubs.
-//!
-//! Produces files that compile and have correct exports/imports,
-//! but with stub implementations.
+//! Scaffold prompts and combined scaffold+enrich execution.
 
-/// System prompt for scaffold (skeleton) execution.
+/// System prompt for combined scaffold+enrich — returns goal AND code in one call.
 pub const SCAFFOLD_PROMPT: &str = "\
-You are a file scaffolder. You produce MINIMAL compilable file stubs.
+You are a code scaffolder and specification writer. You receive a file skeleton (path, exports, imports) and produce TWO things:
+
+1. An ENRICHED GOAL — a detailed specification expanding the skeleton goal with exact signatures, behavior, edge cases
+2. A SCAFFOLD FILE — minimal compilable code that satisfies all exports/imports
 
 YOUR OUTPUT FORMAT:
-Line 1: ===FILE_START===
-Lines 2..N: the MINIMAL source code
-Last line: ===FILE_END===
+===GOAL_START===
+(detailed goal text — plain English, no code blocks)
+===GOAL_END===
+===FILE_START===
+(complete minimal compilable source code)
+===FILE_END===
 
-RULES:
-1. Output the MINIMUM code needed to make the file compile and satisfy all exports.
-2. Functions: correct signature, return a placeholder value (empty string, 0, null, empty array).
-3. Types/interfaces: complete definition with all fields and correct types.
-4. Components: render a minimal div with the component name. Include all props in the signature.
-5. Hooks: return the correct shape with placeholder values and stub functions.
-6. Config files: complete and correct configuration — these ARE the final version.
-7. Test files: single placeholder test (describe + it with expect(true).toBe(true)).
-8. CSS files: complete with all required imports/directives — these ARE the final version.
-9. HTML files: complete entry point — these ARE the final version.
-10. Export ALL symbols listed in MANDATORY Exports with EXACT names.
-11. Import ALL symbols from Import Interfaces with EXACT names.
-12. The goal is COMPILABLE STRUCTURE, not functionality.
-13. NEVER use markdown fences. Just raw code between markers.";
+GOAL RULES:
+- PRESERVE all function names, prop names, type names from the skeleton goal
+- ADD: exact parameter types, return types, behavior details, edge cases, state management
+- For test files: describe what to test, expected inputs/outputs, scenarios
+
+FILE RULES:
+- Output the MINIMUM code needed to compile and satisfy all exports
+- Functions: correct signature, return placeholder value
+- Types/interfaces: complete definition with all fields
+- Components: render minimal div, include all props in signature
+- Hooks: return correct shape with placeholder values and stub functions
+- Config files: complete and correct — this IS the final version
+- Test files: single placeholder test that passes
+- CSS/HTML files: complete — this IS the final version
+- Export ALL symbols in MANDATORY Exports with EXACT names
+- Import ALL symbols from Import Interfaces with EXACT names
+- NEVER use markdown fences inside the markers. Just raw code.";
 
 /// System prompt for final execution — full implementation preserving structure.
 pub const FINAL_PROMPT: &str = "\
@@ -47,3 +53,67 @@ CRITICAL RULES:
 7. NEVER change function signatures — same parameters, same return types.
 8. NEVER use markdown fences. Just raw code between markers.
 9. Output the COMPLETE file, every line from first to last.";
+
+/// Parse combined scaffold+enrich output into (goal, code).
+pub fn parse_scaffold_output(content: &str) -> (String, String) {
+    let trimmed = content.trim();
+
+    let goal = extract_between(trimmed, "===GOAL_START===", "===GOAL_END===")
+        .unwrap_or_default();
+
+    let code = extract_between(trimmed, "===FILE_START===", "===FILE_END===")
+        .unwrap_or_default();
+
+    (goal, code)
+}
+
+fn extract_between(content: &str, start_marker: &str, end_marker: &str) -> Option<String> {
+    let start = content.find(start_marker)?;
+    let after = &content[start + start_marker.len()..];
+    let code_start = after.strip_prefix('\n').unwrap_or(after);
+
+    if let Some(end) = code_start.find(end_marker) {
+        let text = code_start[..end].trim_end();
+        if text.is_empty() { None } else { Some(text.to_string()) }
+    } else {
+        let text = code_start.trim_end();
+        if text.is_empty() { None } else { Some(text.to_string()) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_full_output() {
+        let content = "===GOAL_START===\nDetailed goal here\n===GOAL_END===\n===FILE_START===\nconst x = 1;\n===FILE_END===";
+        let (goal, code) = parse_scaffold_output(content);
+        assert_eq!(goal, "Detailed goal here");
+        assert_eq!(code, "const x = 1;");
+    }
+
+    #[test]
+    fn parse_missing_goal() {
+        let content = "===FILE_START===\ncode only\n===FILE_END===";
+        let (goal, code) = parse_scaffold_output(content);
+        assert!(goal.is_empty());
+        assert_eq!(code, "code only");
+    }
+
+    #[test]
+    fn parse_empty() {
+        let (goal, code) = parse_scaffold_output("nothing");
+        assert!(goal.is_empty());
+        assert!(code.is_empty());
+    }
+
+    #[test]
+    fn parse_multiline_goal() {
+        let content = "===GOAL_START===\nLine 1\nLine 2\nLine 3\n===GOAL_END===\n===FILE_START===\nfn main(){}\n===FILE_END===";
+        let (goal, code) = parse_scaffold_output(content);
+        assert!(goal.contains("Line 1"));
+        assert!(goal.contains("Line 3"));
+        assert_eq!(code, "fn main(){}");
+    }
+}

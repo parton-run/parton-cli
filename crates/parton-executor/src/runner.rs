@@ -12,12 +12,93 @@ use crate::scaffold;
 /// Execution mode determines which system prompt is used.
 #[derive(Clone, Copy, Debug)]
 pub enum ExecMode {
-    /// Generate minimal compilable stubs.
+    /// Combined scaffold+enrich: returns goal + minimal compilable code.
     Scaffold,
-    /// Full implementation (single-pass, no scaffold).
+    /// Full implementation (single-pass, no scaffold phase).
     Full,
     /// Final implementation — preserve existing scaffold structure.
     Final,
+}
+
+/// Result of a scaffold+enrich execution for one file.
+#[derive(Debug, Clone)]
+pub struct ScaffoldResult {
+    /// File path.
+    pub path: String,
+    /// Enriched goal (from ===GOAL_START=== / ===GOAL_END===).
+    pub enriched_goal: String,
+    /// Scaffold code (from ===FILE_START=== / ===FILE_END===).
+    pub code: String,
+    /// Whether execution succeeded.
+    pub success: bool,
+    /// Error message if failed.
+    pub error: Option<String>,
+    /// Tokens consumed.
+    pub tokens_used: u32,
+    /// Time in ms.
+    pub elapsed_ms: u64,
+}
+
+/// Execute scaffold+enrich in parallel. Returns ScaffoldResults with enriched goals + code.
+pub async fn scaffold_streaming(
+    plan: &RunPlan,
+    provider: &dyn ModelProvider,
+    project_root: &Path,
+    on_result: &dyn Fn(&ScaffoldResult),
+) -> Vec<ScaffoldResult> {
+    use futures_util::stream::{FuturesUnordered, StreamExt};
+
+    let mut futures: FuturesUnordered<_> = plan
+        .files
+        .iter()
+        .map(|file| scaffold_single(file, plan, provider, project_root))
+        .collect();
+
+    let mut results = Vec::with_capacity(plan.files.len());
+    while let Some(result) = futures.next().await {
+        on_result(&result);
+        results.push(result);
+    }
+    results
+}
+
+/// Scaffold+enrich a single file.
+async fn scaffold_single(
+    file: &FilePlan,
+    plan: &RunPlan,
+    provider: &dyn ModelProvider,
+    project_root: &Path,
+) -> ScaffoldResult {
+    let prompt = build_file_prompt(file, plan, project_root);
+    let start = Instant::now();
+
+    match provider.send(scaffold::SCAFFOLD_PROMPT, &prompt, false).await {
+        Ok(response) => {
+            let (goal, code) = scaffold::parse_scaffold_output(&response.content);
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            let tokens = response.prompt_tokens + response.completion_tokens;
+            let success = !code.is_empty();
+
+            ScaffoldResult {
+                path: file.path.clone(),
+                enriched_goal: goal,
+                code,
+                success,
+                error: if success { None } else { Some("empty scaffold output".into()) },
+                tokens_used: tokens,
+                elapsed_ms,
+            }
+        }
+        Err(e) => ScaffoldResult {
+            path: file.path.clone(),
+            enriched_goal: String::new(),
+            code: String::new(),
+            success: false,
+            error: Some(e.to_string()),
+            tokens_used: 0,
+            elapsed_ms: start.elapsed().as_millis() as u64,
+        },
+    }
 }
 
 /// Execute all files in parallel, streaming results as they complete.

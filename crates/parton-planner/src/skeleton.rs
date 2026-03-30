@@ -61,6 +61,12 @@ When file A passes data to file B (e.g. component props, function parameters), t
 - GOOD goal: "TodoItem({ todo, onToggle, onDelete }: Props) — receives todo object, onToggle callback, onDelete callback"
 If you don't specify exact names, parallel agents will use different names and the code won't compile.
 
+COMPLETENESS CHECK — CRITICAL:
+Every file that is imported by another file in the plan MUST exist in the plan.
+If main.tsx imports from "./components/App", then src/components/App.tsx MUST be in the plan.
+If App.tsx renders TodoItem, then the file containing TodoItem MUST be in the plan.
+Missing files = broken imports = build failure. Trace ALL imports and ensure every target exists.
+
 EXISTING CODE: If the Project Context shows existing files, do NOT recreate them.
 Use context_files to reference existing files the executor needs to see.
 If an existing file already exports a symbol you need, import it — don't create a duplicate.
