@@ -1,6 +1,7 @@
 //! Terminal UI components built on ratatui.
 
 pub mod clarify;
+pub mod multi_select;
 pub mod plan_review;
 pub mod plan_view;
 pub mod progress;

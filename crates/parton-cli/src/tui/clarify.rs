@@ -2,7 +2,7 @@
 
 use parton_core::{ClarificationResult, PlanningContext, Question, QuestionType};
 
-use super::{select, style};
+use super::{multi_select, select, style};
 
 /// Run the interactive clarification TUI.
 pub fn run_clarification(prompt: &str, result: &ClarificationResult) -> PlanningContext {
@@ -69,30 +69,26 @@ fn ask_question(question: &Question) -> Option<String> {
             }
         }
         QuestionType::MultiSelect => {
-            // For multi-select, run single select in a loop until user picks "Done".
-            let mut selected = Vec::new();
-            let mut items = question.options.clone();
-            items.push("✓ Done selecting".into());
+            let indices = multi_select::run_multi_select(
+                &question.question,
+                &question.options,
+            ).ok()?;
 
-            loop {
-                let title = format!("{} (selected: {})", question.question, selected.len());
-                let idx = select::run_select(&title, &items, 0).ok()?;
+            let mut chosen: Vec<String> = indices
+                .iter()
+                .map(|&i| question.options[i].clone())
+                .collect();
 
-                if idx == items.len() - 1 {
-                    break; // "Done" selected.
-                }
-
-                let chosen = &question.options[idx];
-                if chosen.starts_with("Other") {
-                    if let Some(custom) = ask_free_text("Your answer") {
-                        selected.push(custom);
-                    }
-                } else if !selected.contains(chosen) {
-                    selected.push(chosen.clone());
+            // If "Other" was selected, ask for custom input.
+            if let Some(pos) = chosen.iter().position(|s| s.starts_with("Other")) {
+                if let Some(custom) = ask_free_text("Your custom answer") {
+                    chosen[pos] = custom;
+                } else {
+                    chosen.remove(pos);
                 }
             }
 
-            if selected.is_empty() { None } else { Some(selected.join(", ")) }
+            if chosen.is_empty() { None } else { Some(chosen.join(", ")) }
         }
     }
 }
