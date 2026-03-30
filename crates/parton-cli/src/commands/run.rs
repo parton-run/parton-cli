@@ -172,10 +172,41 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         style::print_ok("Structure compiles");
         String::new()
     } else {
-        style::print_err("Structure errors — will fix in final execution:");
+        style::print_err("Structure errors — fixing config files first:");
         for line in check.errors.lines().take(10) {
             eprintln!("    {}", style::dim(line));
         }
+
+        // Re-scaffold ONLY config files that have errors.
+        let config_fix_plan = {
+            let mut p = enriched_plan.clone();
+            p.files.retain(|f| {
+                f.scaffold_only && check.errors.lines().any(|line| line.contains(&f.path))
+            });
+            p
+        };
+        if !config_fix_plan.files.is_empty() {
+            let fix_labels: Vec<String> = config_fix_plan.files.iter().map(|f| f.path.clone()).collect();
+            let fix_prog = progress::ParallelProgress::new(&fix_labels);
+            let _t = fix_prog.start_ticker();
+            let fix_results = rt.block_on(async {
+                parton_executor::execute_streaming(
+                    &config_fix_plan, &*exec_provider, project_root,
+                    parton_executor::ExecMode::Final, &check.errors,
+                    &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
+                ).await
+            });
+            drop(_t);
+            let fix_ok: Vec<FileResult> = fix_results.iter().filter(|r| r.success).cloned().collect();
+            let _ = parton_executor::write_results(&fix_ok, project_root);
+
+            // Re-check.
+            let recheck = parton_executor::run_check(&plan.check_commands, project_root);
+            if recheck.passed {
+                style::print_ok("Config fix successful — structure compiles");
+            }
+        }
+
         check.errors
     };
 
