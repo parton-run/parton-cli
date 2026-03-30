@@ -183,8 +183,16 @@ fn create_provider(stage: StageKind, config: &PartonConfig) -> Result<Box<dyn Mo
 
 /// Generate a turbo plan via LLM.
 async fn generate_plan(prompt: &str, project_root: &Path, provider: &dyn ModelProvider) -> Result<RunPlan> {
+    // Build enriched system prompt with project context.
+    let project_ctx = parton_planner::build_project_context(project_root);
+    let system = format!(
+        "{}\n\n# Project Context\n{}",
+        parton_planner::SYSTEM_PROMPT,
+        project_ctx,
+    );
+
     let response = provider
-        .send(parton_planner::SYSTEM_PROMPT, prompt, false)
+        .send(&system, prompt, false)
         .await
         .map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
 
