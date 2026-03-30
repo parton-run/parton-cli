@@ -437,4 +437,3 @@ fn run_validation_check(commands: &[String], project_root: &Path) -> parton_exec
     }
     result
 }
-
