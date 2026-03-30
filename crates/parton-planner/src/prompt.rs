@@ -25,7 +25,8 @@ THE JSON SCHEMA:
       "must_import_from": [
         {"path": "string — file path to import from", "symbols": ["string — EXACT symbol names"]}
       ],
-      "context_files": ["string — existing file paths the executor should read"]
+      "context_files": ["string — existing file paths the executor should read"],
+      "is_test": true or false
     }
   ],
   "validation_commands": ["string — shell commands to verify the code, e.g. npm run build"],
@@ -67,6 +68,10 @@ Example conventions:
  "Test files live next to source files with .test.ts/.test.tsx suffix",
  "Config files use .cjs extension since package.json has type: module",
  "Use vitest for testing"]
+
+IS_TEST FLAG:
+Set "is_test": true for every test file in the plan. Set "is_test": false for everything else.
+This is how the system validates that every logic file has a corresponding test — it is language-agnostic.
 
 GENERAL RULES:
 - ONE file per task. Never combine multiple files.
