@@ -11,8 +11,12 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use parton_core::{FileResult, ModelProvider, PartonConfig, StageKind};
+use parton_core::{FileResult, StageKind};
 
+use super::run_helpers::{
+    create_provider, format_comments, is_greenfield_project, is_missing_tool_error, load_or_setup,
+    needs_final_execution, run_validation_check,
+};
 use crate::tui::{clarify, plan_review, progress, spinner, style};
 
 /// Execute the full pipeline.
@@ -134,6 +138,12 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         }
     }
 
+    // ── Environment check ──
+    if !super::env_check::warn_missing_tools(&plan) {
+        style::print_err("Aborted — install the missing tools and try again.");
+        return Ok(());
+    }
+
     // ── Step 2: Scaffold+Enrich (parallel, combined) ──
     style::print_header("Step 2 — Scaffold");
     let exec_labels: Vec<String> = plan.files.iter().map(|f| f.path.clone()).collect();
@@ -188,6 +198,9 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
 
     let structure_errors = if check.passed {
         style::print_ok("Structure compiles");
+        String::new()
+    } else if is_missing_tool_error(&check.errors) {
+        style::print_err("Structure check skipped — required tools not installed");
         String::new()
     } else {
         style::print_err("Structure errors — fixing config files first:");
@@ -299,36 +312,38 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         let val_result = run_validation_check(&plan.validation_commands, project_root);
 
         if !val_result.passed {
-            style::print_err("Validation failed — attempting auto-fix...");
-
-            // Re-run final execution with validation errors as context.
-            let fix_prog = progress::ParallelProgress::new(&final_labels);
-            let _ticker = fix_prog.start_ticker();
-            let fix_results = rt.block_on(async {
-                parton_executor::execute_streaming(
-                    &final_plan,
-                    &*exec_provider,
-                    project_root,
-                    parton_executor::ExecMode::Final,
-                    &val_result.errors,
-                    &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
-                )
-                .await
-            });
-            drop(_ticker);
-
-            let fix_ok: Vec<FileResult> =
-                fix_results.iter().filter(|r| r.success).cloned().collect();
-            let _ = parton_executor::write_results(&fix_ok, project_root);
-
-            // Re-validate.
-            let retry = run_validation_check(&plan.validation_commands, project_root);
-            if retry.passed {
-                style::print_ok("Auto-fix successful — validation passed");
+            if is_missing_tool_error(&val_result.errors) {
+                style::print_err("Skipping auto-fix — install the missing tools and re-run");
             } else {
-                style::print_err("Validation still failing after auto-fix");
-                for line in retry.errors.lines().take(10) {
-                    eprintln!("    {}", style::dim(line));
+                style::print_err("Validation failed — attempting auto-fix...");
+
+                let fix_prog = progress::ParallelProgress::new(&final_labels);
+                let _ticker = fix_prog.start_ticker();
+                let fix_results = rt.block_on(async {
+                    parton_executor::execute_streaming(
+                        &final_plan,
+                        &*exec_provider,
+                        project_root,
+                        parton_executor::ExecMode::Final,
+                        &val_result.errors,
+                        &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
+                    )
+                    .await
+                });
+                drop(_ticker);
+
+                let fix_ok: Vec<FileResult> =
+                    fix_results.iter().filter(|r| r.success).cloned().collect();
+                let _ = parton_executor::write_results(&fix_ok, project_root);
+
+                let retry = run_validation_check(&plan.validation_commands, project_root);
+                if retry.passed {
+                    style::print_ok("Auto-fix successful — validation passed");
+                } else {
+                    style::print_err("Validation still failing after auto-fix");
+                    for line in retry.errors.lines().take(10) {
+                        eprintln!("    {}", style::dim(line));
+                    }
                 }
             }
         }
@@ -369,71 +384,4 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-// ── Helpers ──
-
-fn format_comments(comments: &[plan_review::ReviewComment]) -> String {
-    comments
-        .iter()
-        .map(|c| match &c.file {
-            Some(path) => format!("- [{}] {}", path, c.text),
-            None => format!("- [GENERAL] {}", c.text),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn load_or_setup(project_root: &Path) -> Result<PartonConfig> {
-    let config = PartonConfig::load(project_root).context("failed to load parton.toml")?;
-    if config.models.default.is_none() {
-        eprintln!("  No provider configured. Starting setup...\n");
-        return crate::commands::setup::run_setup(project_root).context("setup failed");
-    }
-    Ok(config)
-}
-
-fn create_provider(stage: StageKind, config: &PartonConfig) -> Result<Box<dyn ModelProvider>> {
-    parton_providers::create_stage_provider(stage, &config.models)
-        .map_err(|e| anyhow::anyhow!("{e}"))
-}
-
-/// Determine if a file needs final execution.
-///
-/// Respects the planner's `scaffold_only` flag — the planner decides
-/// which files are config/static (scaffold is final) vs logic (needs implementation).
-fn needs_final_execution(file: &parton_core::FilePlan) -> bool {
-    !file.scaffold_only
-}
-
-fn is_greenfield_project(root: &Path) -> bool {
-    !root.join("package.json").exists()
-        && !root.join("Cargo.toml").exists()
-        && !root.join("go.mod").exists()
-        && !root.join("pyproject.toml").exists()
-}
-
-fn run_validation_check(commands: &[String], project_root: &Path) -> parton_executor::CheckResult {
-    let result = parton_executor::run_check(commands, project_root);
-    for cmd in commands {
-        // Check each individually for display.
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(project_root)
-            .env("CI", "true")
-            .output();
-        match output {
-            Ok(o) if o.status.success() => style::print_ok(cmd),
-            Ok(o) => {
-                style::print_err(&format!("{cmd} (exit {})", o.status.code().unwrap_or(-1)));
-                let stderr = String::from_utf8_lossy(&o.stderr);
-                for line in stderr.lines().take(5) {
-                    eprintln!("    {}", style::dim(line));
-                }
-            }
-            Err(e) => style::print_err(&format!("{cmd}: {e}")),
-        }
-    }
-    result
 }
