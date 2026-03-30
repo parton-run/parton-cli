@@ -97,6 +97,12 @@ fn symbol_present(content: &str, symbol: &str, path: &str) -> bool {
     );
 
     if is_js_ts {
+        // "default" export: match `export default`, `module.exports`
+        if symbol == "default" {
+            return content.contains("export default")
+                || content.contains("module.exports");
+        }
+
         let patterns = [
             format!("export function {symbol}"),
             format!("export const {symbol}"),
@@ -106,6 +112,7 @@ fn symbol_present(content: &str, symbol: &str, path: &str) -> bool {
             format!("export enum {symbol}"),
             format!("export async function {symbol}"),
             format!("export default function {symbol}"),
+            format!("export default class {symbol}"),
         ];
 
         for pattern in &patterns {

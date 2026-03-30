@@ -53,7 +53,13 @@ pub struct RunPlan {
     pub conventions: Vec<String>,
     /// Files to generate in this phase.
     pub files: Vec<FilePlan>,
-    /// Shell commands to verify the generated code.
+    /// Shell command to install dependencies (e.g. "npm install", "cargo fetch").
+    #[serde(default)]
+    pub install_command: Option<String>,
+    /// Shell commands to check structure compiles (e.g. "npx tsc --noEmit").
+    #[serde(default)]
+    pub check_commands: Vec<String>,
+    /// Shell commands for full validation — build + tests (e.g. "npm run build", "npm test").
     #[serde(default)]
     pub validation_commands: Vec<String>,
     /// True if this plan completes the entire task.

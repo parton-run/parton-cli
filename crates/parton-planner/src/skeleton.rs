@@ -1,0 +1,222 @@
+//! Two-phase planning: skeleton (contracts) → enrich (detailed goals) in parallel.
+
+use parton_core::{FilePlan, ModelProvider, ProviderError, RunPlan};
+
+/// System prompt for skeleton planning — full contracts, minimal goals.
+const SKELETON_PROMPT: &str = r#"You are a software architect producing a JSON execution plan SKELETON.
+
+You MUST return a single valid JSON object. No text before or after. No markdown fences.
+
+THE JSON SCHEMA:
+{
+  "summary": "string — one line describing the feature",
+  "conventions": ["string — project-wide rules ALL files must follow"],
+  "files": [
+    {
+      "path": "string — relative file path",
+      "action": "Create" or "Edit",
+      "goal": "string — ONE SENTENCE summary only (details come later)",
+      "must_export": ["string — EXACT symbol names this file MUST export"],
+      "must_import_from": [
+        {"path": "string — EXACT path matching another file's path field", "symbols": ["string"]}
+      ],
+      "context_files": ["string — existing files the executor needs"]
+    }
+  ],
+  "install_command": "string or null — shell command to install dependencies (e.g. 'npm install', 'cargo fetch', 'pip install -r requirements.txt')",
+  "check_commands": ["string — fast commands to verify structure compiles (e.g. 'npx tsc --noEmit', 'cargo check', 'go build ./...')"],
+  "validation_commands": ["string — full validation: build + tests (e.g. 'npm run build', 'npm test', 'cargo test')"],
+  "done": true or false,
+  "remaining_work": "string or null"
+}
+
+THIS IS A SKELETON — the "goal" field should be ONE SHORT SENTENCE describing what the file does.
+Do NOT include signatures, types, or implementation details in goal. Those come in a separate enrichment step.
+
+CRITICAL — INTERFACE PRECISION:
+When file A passes data to file B (e.g. component props, function parameters), the skeleton goal MUST specify the EXACT prop/parameter names. Example:
+- BAD goal: "TodoItem component that can toggle and delete"
+- GOOD goal: "TodoItem({ todo, onToggle, onDelete }: Props) — receives todo object, onToggle callback, onDelete callback"
+If you don't specify exact names, parallel agents will use different names and the code won't compile.
+
+ALSO — must_export and must_import_from MUST be COMPLETE and PRECISE:
+- Every exported symbol name must be exact
+- Every import must reference the EXACT path of the source file in this plan
+- If file B needs symbol X from file A, then A's must_export MUST include X
+
+CONVENTIONS must be complete — import style, export style, naming, testing framework, etc.
+
+TESTING IS MANDATORY. For EVERY source file that contains logic you MUST include a corresponding test file in the SAME plan. No exceptions.
+  Example: if you create src/hooks/useTodos.ts, you MUST also create src/hooks/useTodos.test.ts.
+  Example: if you create src/components/TodoItem.tsx, you MUST also create src/components/TodoItem.test.tsx.
+  Example: if you create lib/auth/roles.ts, you MUST also create lib/auth/roles.test.ts.
+  Config files (package.json, tsconfig.json, vite.config.ts, index.html, CSS files) do NOT need tests.
+  A plan with 8 logic files and only 1 test file is WRONG. It should have 8 test files.
+
+Use NAMED exports everywhere (export function X, export const Y). NEVER use default exports. This prevents import mismatches between parallel files.
+
+PHASING: max 15 files per phase. Set done=false if more needed.
+
+ALL scripts must be non-interactive and terminate on their own (CI=true, no stdin).
+CRITICAL: if the test runner defaults to watch mode you MUST configure it to run once and exit.
+Example: for vitest the test script must be 'vitest run' NOT 'vitest'. For jest: '--watchAll=false'.
+
+Return valid JSON only."#;
+
+/// System prompt for enriching a single file's goal.
+const ENRICH_PROMPT: &str = r#"You are a code specification writer. Given a file's skeleton (path, exports, imports), write a PRECISE goal description.
+
+The goal must include:
+- EXACT function signatures with parameter types and return types
+- EXACT type/interface shapes with all fields
+- EXACT behavior descriptions for each exported symbol
+- Cross-file return types: if this function returns data used by other files, state the exact shape
+
+Your response must be ONLY the goal text — a plain string. No JSON, no markdown, no code blocks. Just a precise natural language description of what the file must contain.
+
+RULES:
+- Include EXACT TypeScript/Rust/Go/Python signatures as appropriate
+- For types: list ALL fields with their types
+- For functions: list ALL parameters, return type, and key behavior
+- For components: list props interface and rendering behavior
+- For hooks: list return value shape and state management approach
+- For test files: list which functions/components to test and key test cases"#;
+
+/// Generate a skeleton plan (contracts only, minimal goals).
+pub async fn generate_skeleton(
+    prompt: &str,
+    project_context: &str,
+    provider: &dyn ModelProvider,
+) -> Result<RunPlan, ProviderError> {
+    let system = if project_context.is_empty() {
+        SKELETON_PROMPT.to_string()
+    } else {
+        format!("{SKELETON_PROMPT}\n\n# Project Context\n{project_context}")
+    };
+
+    let response = provider.send(&system, prompt, false).await?;
+
+    crate::parse_plan(&response.content).map_err(|e| {
+        ProviderError::Other(format!("failed to parse skeleton plan: {e}"))
+    })
+}
+
+/// Enrich all file goals in parallel.
+///
+/// Takes a skeleton plan, sends each file to the LLM for detailed goal
+/// enrichment, and returns the plan with enriched goals.
+pub async fn enrich_plan(
+    plan: &RunPlan,
+    provider: &dyn ModelProvider,
+    on_enriched: &dyn Fn(&str),
+) -> Result<RunPlan, ProviderError> {
+    use futures_util::stream::{FuturesUnordered, StreamExt};
+
+    let conventions_text = if plan.conventions.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Project conventions:\n{}",
+            plan.conventions.iter().map(|c| format!("- {c}")).collect::<Vec<_>>().join("\n")
+        )
+    };
+
+    let futures: FuturesUnordered<_> = plan
+        .files
+        .iter()
+        .map(|file| enrich_single_file(file, plan, &conventions_text, provider))
+        .collect();
+
+    let enriched_goals: Vec<(String, String)> = futures
+        .filter_map(|result| async move { result.ok() })
+        .inspect(|(path, _)| on_enriched(path))
+        .collect()
+        .await;
+
+    // Merge enriched goals back into the plan.
+    let mut enriched_plan = plan.clone();
+    for file in &mut enriched_plan.files {
+        if let Some((_, goal)) = enriched_goals.iter().find(|(p, _)| p == &file.path) {
+            file.goal = goal.clone();
+        }
+    }
+
+    Ok(enriched_plan)
+}
+
+/// Enrich a single file's goal via LLM.
+async fn enrich_single_file(
+    file: &FilePlan,
+    plan: &RunPlan,
+    conventions: &str,
+    provider: &dyn ModelProvider,
+) -> Result<(String, String), ProviderError> {
+    let mut context_parts = vec![];
+
+    if !conventions.is_empty() {
+        context_parts.push(conventions.to_string());
+    }
+
+    context_parts.push(format!("File: {} ({})", file.path, match file.action {
+        parton_core::FileAction::Create => "Create",
+        parton_core::FileAction::Edit => "Edit",
+    }));
+
+    context_parts.push(format!("Current goal: {}", file.goal));
+
+    if !file.must_export.is_empty() {
+        context_parts.push(format!(
+            "Must export: {}",
+            file.must_export.join(", ")
+        ));
+    }
+
+    if !file.must_import_from.is_empty() {
+        let imports: Vec<String> = file.must_import_from.iter().map(|imp| {
+            format!("from {}: {}", imp.path, imp.symbols.join(", "))
+        }).collect();
+        context_parts.push(format!("Imports: {}", imports.join("; ")));
+    }
+
+    // Include sibling file summaries so enrich knows the full picture.
+    let siblings: Vec<String> = plan.files.iter()
+        .filter(|f| f.path != file.path)
+        .map(|f| {
+            let exports = if f.must_export.is_empty() {
+                String::new()
+            } else {
+                format!(" exports [{}]", f.must_export.join(", "))
+            };
+            format!("- {}{}", f.path, exports)
+        })
+        .collect();
+
+    if !siblings.is_empty() {
+        context_parts.push(format!("Other files in plan:\n{}", siblings.join("\n")));
+    }
+
+    let user_prompt = context_parts.join("\n\n");
+    let response = provider.send(ENRICH_PROMPT, &user_prompt, false).await?;
+
+    Ok((file.path.clone(), response.content.trim().to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skeleton_prompt_has_key_rules() {
+        assert!(SKELETON_PROMPT.contains("ONE SHORT SENTENCE"));
+        assert!(SKELETON_PROMPT.contains("must_export"));
+        assert!(SKELETON_PROMPT.contains("COMPLETE and PRECISE"));
+        assert!(SKELETON_PROMPT.contains("TESTING IS MANDATORY"));
+    }
+
+    #[test]
+    fn enrich_prompt_has_key_rules() {
+        assert!(ENRICH_PROMPT.contains("EXACT function signatures"));
+        assert!(ENRICH_PROMPT.contains("EXACT type/interface shapes"));
+        assert!(ENRICH_PROMPT.contains("Cross-file return types"));
+    }
+}

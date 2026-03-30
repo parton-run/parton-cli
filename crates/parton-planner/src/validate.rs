@@ -20,6 +20,10 @@ pub enum ValidationError {
     #[error("file '{0}' has an empty goal")]
     EmptyGoal(String),
 
+    /// Plan has logic files but no test files.
+    #[error("plan has {0:?} logic files but no test files — tests are mandatory")]
+    MissingTests(Vec<String>),
+
     /// An import references a file not in the plan and not on disk.
     #[error("file '{file}' imports from '{import}' which is neither in the plan nor on disk")]
     InvalidImport {
@@ -53,6 +57,30 @@ pub fn validate_plan(plan: &RunPlan, project_root: &Path) -> Result<(), Validati
         if file.goal.trim().is_empty() {
             return Err(ValidationError::EmptyGoal(file.path.clone()));
         }
+    }
+
+    // Check test file coverage: logic files must have corresponding test files.
+    let all_paths: Vec<&str> = plan.files.iter().map(|f| f.path.as_str()).collect();
+    let config_extensions = ["json", "toml", "yaml", "yml", "css", "html", "md", "lock"];
+    let logic_files: Vec<&str> = all_paths
+        .iter()
+        .filter(|p| {
+            !p.contains(".test.") && !p.contains(".spec.")
+                && !config_extensions.iter().any(|ext| p.ends_with(ext))
+                && !p.ends_with(".css") && !p.ends_with(".html")
+        })
+        .copied()
+        .collect();
+    let test_files: Vec<&str> = all_paths
+        .iter()
+        .filter(|p| p.contains(".test.") || p.contains(".spec."))
+        .copied()
+        .collect();
+
+    if !logic_files.is_empty() && test_files.is_empty() {
+        return Err(ValidationError::MissingTests(
+            logic_files.iter().map(|s| s.to_string()).collect(),
+        ));
     }
 
     let plan_paths: HashSet<&str> = plan.files.iter().map(|f| f.path.as_str()).collect();

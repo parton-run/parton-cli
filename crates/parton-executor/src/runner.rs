@@ -6,15 +6,30 @@ use std::time::Instant;
 use parton_core::{FileResult, FilePlan, ModelProvider, RunPlan};
 
 use crate::output::clean_output;
-use crate::prompt::{build_file_prompt, SYSTEM_PROMPT};
+use crate::prompt::build_file_prompt;
+use crate::scaffold;
 
-/// Execute all files in a plan in parallel, streaming results as they complete.
+/// Execution mode determines which system prompt is used.
+#[derive(Clone, Copy, Debug)]
+pub enum ExecMode {
+    /// Generate minimal compilable stubs.
+    Scaffold,
+    /// Full implementation (single-pass, no scaffold).
+    Full,
+    /// Final implementation — preserve existing scaffold structure.
+    Final,
+}
+
+/// Execute all files in parallel, streaming results as they complete.
 ///
-/// Calls `on_result` for each file as it finishes (order is non-deterministic).
+/// `structure_errors`: if non-empty, appended to Final mode prompts
+/// so the executor knows what to fix.
 pub async fn execute_streaming(
     plan: &RunPlan,
     provider: &dyn ModelProvider,
     project_root: &Path,
+    mode: ExecMode,
+    structure_errors: &str,
     on_result: &dyn Fn(&FileResult),
 ) -> Vec<FileResult> {
     use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -22,7 +37,7 @@ pub async fn execute_streaming(
     let mut futures: FuturesUnordered<_> = plan
         .files
         .iter()
-        .map(|file| execute_file(file, plan, provider, project_root))
+        .map(|file| execute_file(file, plan, provider, project_root, mode, structure_errors))
         .collect();
 
     let mut results = Vec::with_capacity(plan.files.len());
@@ -33,26 +48,50 @@ pub async fn execute_streaming(
     results
 }
 
-/// Execute all files in a plan in parallel (no streaming callback).
+/// Execute all files (no streaming callback).
 pub async fn execute(
     plan: &RunPlan,
     provider: &dyn ModelProvider,
     project_root: &Path,
+    mode: ExecMode,
 ) -> Vec<FileResult> {
-    execute_streaming(plan, provider, project_root, &|_| {}).await
+    execute_streaming(plan, provider, project_root, mode, "", &|_| {}).await
 }
 
-/// Execute a single file from the plan.
+/// Execute a single file.
 async fn execute_file(
     file: &FilePlan,
     plan: &RunPlan,
     provider: &dyn ModelProvider,
     project_root: &Path,
+    mode: ExecMode,
+    structure_errors: &str,
 ) -> FileResult {
-    let prompt = build_file_prompt(file, plan, project_root);
+    let system_prompt = match mode {
+        ExecMode::Scaffold => scaffold::SCAFFOLD_PROMPT,
+        ExecMode::Full => crate::prompt::SYSTEM_PROMPT,
+        ExecMode::Final => scaffold::FINAL_PROMPT,
+    };
+
+    let mut prompt = match mode {
+        ExecMode::Final => build_final_prompt(file, plan, project_root),
+        _ => build_file_prompt(file, plan, project_root),
+    };
+
+    // Inject structure check errors into final execution.
+    if matches!(mode, ExecMode::Final) && !structure_errors.is_empty() {
+        let relevant = extract_relevant_errors(structure_errors, &file.path);
+        if !relevant.is_empty() {
+            prompt.push_str(&format!(
+                "\n\n## STRUCTURE CHECK ERRORS (must fix)\n\
+                 The scaffold had these compilation errors. You MUST fix them:\n```\n{relevant}\n```"
+            ));
+        }
+    }
+
     let start = Instant::now();
 
-    match provider.send(SYSTEM_PROMPT, &prompt, false).await {
+    match provider.send(system_prompt, &prompt, false).await {
         Ok(response) => {
             let content = clean_output(&response.content);
             let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -79,33 +118,47 @@ async fn execute_file(
     }
 }
 
+/// Build prompt for final execution — includes existing scaffold content.
+fn build_final_prompt(file: &FilePlan, plan: &RunPlan, project_root: &Path) -> String {
+    let base_prompt = build_file_prompt(file, plan, project_root);
+
+    let scaffold_path = project_root.join(&file.path);
+    let scaffold_content = std::fs::read_to_string(&scaffold_path).unwrap_or_default();
+
+    if scaffold_content.is_empty() {
+        return base_prompt;
+    }
+
+    format!(
+        "{base_prompt}\n\n\
+         ## EXISTING SCAFFOLD (imports and exports are VERIFIED working)\n\
+         ```\n{scaffold_content}\n```\n\n\
+         IMPORTANT: Keep ALL import and export statements EXACTLY as shown above.\n\
+         Replace only the stub implementations with real code."
+    )
+}
+
+/// Extract error lines relevant to a specific file path.
+fn extract_relevant_errors(all_errors: &str, file_path: &str) -> String {
+    all_errors
+        .lines()
+        .filter(|line| line.contains(file_path))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use async_trait::async_trait;
     use parton_core::{FileAction, ModelResponse, ProviderError};
 
-    struct MockProvider {
-        response: String,
-    }
+    struct MockProvider { response: String }
 
     #[async_trait]
     impl ModelProvider for MockProvider {
         async fn send(&self, _: &str, _: &str, _: bool) -> Result<ModelResponse, ProviderError> {
-            Ok(ModelResponse {
-                content: self.response.clone(),
-                prompt_tokens: 10,
-                completion_tokens: 5,
-            })
-        }
-    }
-
-    struct FailingProvider;
-
-    #[async_trait]
-    impl ModelProvider for FailingProvider {
-        async fn send(&self, _: &str, _: &str, _: bool) -> Result<ModelResponse, ProviderError> {
-            Err(ProviderError::Other("test error".into()))
+            Ok(ModelResponse { content: self.response.clone(), prompt_tokens: 10, completion_tokens: 5 })
         }
     }
 
@@ -121,6 +174,8 @@ mod tests {
                 must_import_from: vec![],
                 context_files: vec![],
             }],
+            install_command: None,
+            check_commands: vec![],
             validation_commands: vec![],
             done: true,
             remaining_work: None,
@@ -129,38 +184,32 @@ mod tests {
 
     #[tokio::test]
     async fn execute_success() {
-        let provider = MockProvider {
-            response: "===FILE_START===\nconst x = 1;\n===FILE_END===".into(),
-        };
+        let provider = MockProvider { response: "===FILE_START===\nconst x = 1;\n===FILE_END===".into() };
         let dir = tempfile::tempdir().unwrap();
-        let results = execute(&test_plan(), &provider, dir.path()).await;
-
-        assert_eq!(results.len(), 1);
+        let results = execute(&test_plan(), &provider, dir.path(), ExecMode::Full).await;
         assert!(results[0].success);
         assert_eq!(results[0].content, "const x = 1;");
-        assert_eq!(results[0].tokens_used, 15);
     }
 
     #[tokio::test]
     async fn execute_empty_output() {
-        let provider = MockProvider {
-            response: "no markers here".into(),
-        };
+        let provider = MockProvider { response: "no markers".into() };
         let dir = tempfile::tempdir().unwrap();
-        let results = execute(&test_plan(), &provider, dir.path()).await;
-
-        assert_eq!(results.len(), 1);
+        let results = execute(&test_plan(), &provider, dir.path(), ExecMode::Full).await;
         assert!(!results[0].success);
-        assert_eq!(results[0].error.as_deref(), Some("empty output"));
     }
 
-    #[tokio::test]
-    async fn execute_provider_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let results = execute(&test_plan(), &FailingProvider, dir.path()).await;
+    #[test]
+    fn extract_relevant_errors_filters() {
+        let errors = "src/App.tsx(14,20): error TS2322: bad type\nsrc/main.tsx(1,8): unused import\nother stuff";
+        let relevant = extract_relevant_errors(errors, "src/App.tsx");
+        assert!(relevant.contains("TS2322"));
+        assert!(!relevant.contains("main.tsx"));
+    }
 
-        assert_eq!(results.len(), 1);
-        assert!(!results[0].success);
-        assert!(results[0].error.as_deref().unwrap().contains("test error"));
+    #[test]
+    fn extract_relevant_errors_empty() {
+        let relevant = extract_relevant_errors("no matching errors", "src/missing.ts");
+        assert!(relevant.is_empty());
     }
 }

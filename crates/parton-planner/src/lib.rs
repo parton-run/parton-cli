@@ -11,10 +11,12 @@ pub mod clarify;
 pub mod context;
 pub mod parse;
 pub mod prompt;
+pub mod skeleton;
 pub mod validate;
 
 pub use clarify::generate_questions;
 pub use context::build_project_context;
 pub use parse::{parse_plan, ParseError};
 pub use prompt::SYSTEM_PROMPT;
+pub use skeleton::{enrich_plan, generate_skeleton};
 pub use validate::{validate_plan, ValidationError};

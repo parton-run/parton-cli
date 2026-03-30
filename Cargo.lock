@@ -1065,6 +1065,7 @@ dependencies = [
 name = "parton-planner"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "parton-core",
  "serde",
  "serde_json",
