@@ -994,7 +994,7 @@ dependencies = [
 
 [[package]]
 name = "parton"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "parton-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -1027,7 +1027,7 @@ dependencies = [
 
 [[package]]
 name = "parton-executor"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "parton-graph"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "parton-knowledge"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "parton-core",
  "serde",
@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "parton-planner"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "futures-util",
  "parton-core",
@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "parton-providers"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "parton-core",

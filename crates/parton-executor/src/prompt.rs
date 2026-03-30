@@ -172,6 +172,7 @@ mod tests {
             must_import_from: vec![],
             context_files: vec![],
             scaffold_only: false,
+            is_test: false,
         };
         let dir = tempfile::tempdir().unwrap();
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());
@@ -189,6 +190,7 @@ mod tests {
             must_import_from: vec![],
             context_files: vec![],
             scaffold_only: false,
+            is_test: false,
         };
         let dir = tempfile::tempdir().unwrap();
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());
@@ -211,6 +213,7 @@ mod tests {
             }],
             context_files: vec![],
             scaffold_only: false,
+            is_test: false,
         };
         let dir = tempfile::tempdir().unwrap();
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());
@@ -231,6 +234,7 @@ mod tests {
             must_import_from: vec![],
             context_files: vec!["tsconfig.json".into()],
             scaffold_only: false,
+            is_test: false,
         };
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());
         assert!(prompt.contains(r#"{"strict": true}"#));
@@ -246,6 +250,7 @@ mod tests {
             must_import_from: vec![],
             context_files: vec![],
             scaffold_only: false,
+            is_test: false,
         };
         let dir = tempfile::tempdir().unwrap();
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());

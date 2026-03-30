@@ -45,6 +45,13 @@ pub struct FilePlan {
     /// Use for config files, CSS, HTML, and other static files.
     #[serde(default)]
     pub scaffold_only: bool,
+    /// Whether this file is a test file.
+    ///
+    /// The planner sets this to `true` for every test file in the plan so
+    /// that validation can enforce test coverage without language-specific
+    /// heuristics.
+    #[serde(default)]
+    pub is_test: bool,
 }
 
 /// A complete execution plan for one phase of work.
@@ -131,6 +138,7 @@ mod tests {
             }],
             context_files: vec!["tsconfig.json".into()],
             scaffold_only: false,
+            is_test: false,
         };
         let json = serde_json::to_string(&plan).unwrap();
         let parsed: FilePlan = serde_json::from_str(&json).unwrap();

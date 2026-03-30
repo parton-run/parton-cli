@@ -272,6 +272,7 @@ mod tests {
                 must_import_from: vec![],
                 context_files: vec![],
                 scaffold_only: false,
+                is_test: false,
             }],
             install_command: None,
             check_commands: vec![],

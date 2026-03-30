@@ -78,15 +78,11 @@ set -euo pipefail
 
 # Parton installer
 # Usage: curl -fsSL https://parton.run/install.sh | sh
+#   or:  PARTON_VERSION=v0.3.0 curl -fsSL https://parton.run/install.sh | sh
 
-INSTALLER
-
-    cat >> "${RELEASE_DIR}/install.sh" << INSTALLER
-VERSION="\${PARTON_VERSION:-v${VERSION}}"
-INSTALLER
-
-    cat >> "${RELEASE_DIR}/install.sh" << 'INSTALLER'
-BASE_URL="https://cdn.parton.run"
+REPO="parton-run/parton-cli"
+VERSION="${PARTON_VERSION:-latest}"
+BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -110,13 +106,13 @@ case "$ARCH" in
 esac
 
 BINARY_NAME="parton-${PLATFORM}-${ARCH_NAME}"
-DOWNLOAD_URL="${BASE_URL}/${VERSION}/${BINARY_NAME}"
+DOWNLOAD_URL="${BASE_URL}/${BINARY_NAME}"
 
 TMP_DIR="$(mktemp -d)"
 TMP_BIN="${TMP_DIR}/parton"
 
 echo "Installing Parton ${VERSION} for ${PLATFORM}-${ARCH_NAME}..."
-curl -fL "$DOWNLOAD_URL" -o "$TMP_BIN"
+curl -fSL "$DOWNLOAD_URL" -o "$TMP_BIN"
 chmod +x "$TMP_BIN"
 
 if [ -d "$HOME/.local/bin" ]; then
@@ -151,7 +147,7 @@ fi
 INSTALLER
 
     chmod +x "${RELEASE_DIR}/install.sh"
-    echo "  ✔ install.sh (default version: v${VERSION})"
+    echo "  ✔ install.sh (downloads from GitHub releases, default: latest)"
 }
 
 case "${1:-all}" in

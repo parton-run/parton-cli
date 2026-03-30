@@ -21,7 +21,8 @@ THE JSON SCHEMA:
         {"path": "string — EXACT path matching another file's path field", "symbols": ["string"]}
       ],
       "context_files": ["string — existing files the executor needs"],
-      "scaffold_only": true or false
+      "scaffold_only": true or false,
+      "is_test": true or false
     }
   ],
   "install_command": "string or null — shell command to install dependencies (e.g. 'npm install', 'cargo fetch', 'pip install -r requirements.txt')",
@@ -42,6 +43,10 @@ Example goals:
 - "Export type Todo = { id: string, text: string, completed: boolean, createdAt: number }"
 
 The goal is the CONTRACT between parallel agents. If you write onToggle in TodoItem but toggleTodo in App, the build breaks. BE PRECISE.
+
+IS_TEST FLAG:
+Set "is_test": true for every test file in the plan. Set "is_test": false for everything else.
+This is how the system validates that every logic file has a corresponding test — it is language-agnostic.
 
 SCAFFOLD_ONLY FLAG:
 Set "scaffold_only": true for files where the scaffold IS the final version:
