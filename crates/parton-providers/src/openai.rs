@@ -41,10 +41,7 @@ impl OpenAiProvider {
     /// Create a provider from environment variables.
     ///
     /// Reads `OPENAI_API_KEY` (or a custom var via `env_key`).
-    pub fn from_env(
-        model: Option<String>,
-        env_key: Option<&str>,
-    ) -> Result<Self, ProviderError> {
+    pub fn from_env(model: Option<String>, env_key: Option<&str>) -> Result<Self, ProviderError> {
         let key_name = env_key.unwrap_or("OPENAI_API_KEY");
         let api_key = read_env_key(key_name)?;
 
@@ -70,11 +67,25 @@ impl ModelProvider for OpenAiProvider {
 
         let body = Request {
             model: &self.config.model,
-            max_tokens: if use_new_param { None } else { Some(self.config.max_tokens) },
-            max_completion_tokens: if use_new_param { Some(self.config.max_tokens) } else { None },
+            max_tokens: if use_new_param {
+                None
+            } else {
+                Some(self.config.max_tokens)
+            },
+            max_completion_tokens: if use_new_param {
+                Some(self.config.max_tokens)
+            } else {
+                None
+            },
             messages: vec![
-                Message { role: "system", content: system },
-                Message { role: "user", content: prompt },
+                Message {
+                    role: "system",
+                    content: system,
+                },
+                Message {
+                    role: "user",
+                    content: prompt,
+                },
             ],
         };
 
@@ -121,9 +132,7 @@ impl ModelProvider for OpenAiProvider {
 
 /// Newer OpenAI models require `max_completion_tokens` instead of `max_tokens`.
 fn uses_max_completion_tokens(model: &str) -> bool {
-    model.starts_with("o1")
-        || model.starts_with("o3")
-        || model.starts_with("gpt-5")
+    model.starts_with("o1") || model.starts_with("o3") || model.starts_with("gpt-5")
 }
 
 /// Read an API key from an environment variable.
@@ -231,7 +240,10 @@ mod tests {
             model: "gpt-4o",
             max_tokens: Some(4096),
             max_completion_tokens: None,
-            messages: vec![Message { role: "user", content: "hi" }],
+            messages: vec![Message {
+                role: "user",
+                content: "hi",
+            }],
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["max_tokens"], 4096);
@@ -244,7 +256,10 @@ mod tests {
             model: "gpt-5.4",
             max_tokens: None,
             max_completion_tokens: Some(4096),
-            messages: vec![Message { role: "user", content: "hi" }],
+            messages: vec![Message {
+                role: "user",
+                content: "hi",
+            }],
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("max_tokens").is_none());

@@ -38,10 +38,22 @@ pub fn build_knowledge_context(store: &dyn KnowledgeStore) -> String {
     let mut sections = vec!["# Project Knowledge".to_string()];
 
     // Group by category.
-    let stack: Vec<&Entry> = entries.iter().filter(|e| matches!(e.category, Category::StackInfo)).collect();
-    let conventions: Vec<&Entry> = entries.iter().filter(|e| matches!(e.category, Category::Convention)).collect();
-    let patterns: Vec<&Entry> = entries.iter().filter(|e| matches!(e.category, Category::Pattern)).collect();
-    let rules: Vec<&Entry> = entries.iter().filter(|e| matches!(e.category, Category::Rule)).collect();
+    let stack: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| matches!(e.category, Category::StackInfo))
+        .collect();
+    let conventions: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| matches!(e.category, Category::Convention))
+        .collect();
+    let patterns: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| matches!(e.category, Category::Pattern))
+        .collect();
+    let rules: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| matches!(e.category, Category::Rule))
+        .collect();
 
     if !stack.is_empty() {
         sections.push("## Stack".into());
@@ -177,22 +189,26 @@ mod tests {
     fn build_context_with_entries() {
         let dir = tempfile::tempdir().unwrap();
         let store = crate::LocalStore::new(dir.path());
-        store.upsert(&Entry {
-            id: "s1".into(),
-            category: Category::StackInfo,
-            title: "TypeScript".into(),
-            content: "Primary language: TypeScript".into(),
-            tags: vec![],
-            source: Source::Auto,
-        }).unwrap();
-        store.upsert(&Entry {
-            id: "c1".into(),
-            category: Category::Convention,
-            title: "Named exports".into(),
-            content: "Use named exports everywhere".into(),
-            tags: vec![],
-            source: Source::Auto,
-        }).unwrap();
+        store
+            .upsert(&Entry {
+                id: "s1".into(),
+                category: Category::StackInfo,
+                title: "TypeScript".into(),
+                content: "Primary language: TypeScript".into(),
+                tags: vec![],
+                source: Source::Auto,
+            })
+            .unwrap();
+        store
+            .upsert(&Entry {
+                id: "c1".into(),
+                category: Category::Convention,
+                title: "Named exports".into(),
+                content: "Use named exports everywhere".into(),
+                tags: vec![],
+                source: Source::Auto,
+            })
+            .unwrap();
 
         let ctx = build_knowledge_context(&store);
         assert!(ctx.contains("Project Knowledge"));

@@ -119,7 +119,9 @@ fn handle_browse_key(state: &mut ReviewState, code: KeyCode) {
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
             let i = state.list_state.selected().unwrap_or(0);
-            state.list_state.select(Some(if i == 0 { file_count - 1 } else { i - 1 }));
+            state
+                .list_state
+                .select(Some(if i == 0 { file_count - 1 } else { i - 1 }));
         }
         KeyCode::Down | KeyCode::Char('j') => {
             let i = state.list_state.selected().unwrap_or(0);
@@ -183,7 +185,7 @@ fn handle_input_key(state: &mut ReviewState, code: KeyCode) {
 fn render_review(frame: &mut Frame, state: &mut ReviewState) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Header.
-        Constraint::Min(0),   // File list + detail.
+        Constraint::Min(0),    // File list + detail.
         Constraint::Length(5), // Comments.
         Constraint::Length(3), // Input or footer.
     ])
@@ -191,7 +193,11 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
 
     // Header.
     let comment_count = state.comments.len();
-    let enter_action = if comment_count == 0 { "approve" } else { "replan" };
+    let enter_action = if comment_count == 0 {
+        "approve"
+    } else {
+        "replan"
+    };
     let header_text = format!(
         "  Plan Review — {} files  │  {} comments  │  Enter = {}",
         state.plan.files.len(),
@@ -199,7 +205,11 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
         enter_action,
     );
     let header = Paragraph::new(header_text)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::BOTTOM));
     frame.render_widget(header, chunks[0]);
 
@@ -228,7 +238,11 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
 
     let list = List::new(list_items)
         .block(Block::default().title("  Files").borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("❯");
 
     frame.render_stateful_widget(list, mid[0], &mut state.list_state);
@@ -250,7 +264,11 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
         if !file.must_import_from.is_empty() {
             lines.push(String::new());
             for imp in &file.must_import_from {
-                lines.push(format!("Import from {}: {}", imp.path, imp.symbols.join(", ")));
+                lines.push(format!(
+                    "Import from {}: {}",
+                    imp.path,
+                    imp.symbols.join(", ")
+                ));
             }
         }
         lines.join("\n")
@@ -273,7 +291,11 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
         })
         .collect();
 
-    let general_marker = if state.general_comments().is_empty() { "" } else { " 💬" };
+    let general_marker = if state.general_comments().is_empty() {
+        ""
+    } else {
+        " 💬"
+    };
     let comments = Paragraph::new(comment_lines)
         .block(
             Block::default()
@@ -285,10 +307,7 @@ fn render_review(frame: &mut Frame, state: &mut ReviewState) {
 
     // Input bar or footer.
     if state.mode == Mode::Input {
-        let target = state
-            .comment_target
-            .as_deref()
-            .unwrap_or("general plan");
+        let target = state.comment_target.as_deref().unwrap_or("general plan");
         let input = Paragraph::new(format!("  Comment on {target}: {}▌", state.input_buffer))
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL));

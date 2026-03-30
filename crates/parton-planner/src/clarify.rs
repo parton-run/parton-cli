@@ -87,9 +87,9 @@ fn parse_response(content: &str) -> Result<ClarificationResult, ProviderError> {
 
     // Strip markdown fences if present.
     let json_str = if trimmed.starts_with("```") {
-        let start = trimmed.find('{').ok_or_else(|| {
-            ProviderError::Other("no JSON in clarification response".into())
-        })?;
+        let start = trimmed
+            .find('{')
+            .ok_or_else(|| ProviderError::Other("no JSON in clarification response".into()))?;
         let end = trimmed.rfind('}').ok_or_else(|| {
             ProviderError::Other("no closing brace in clarification response".into())
         })?;
@@ -98,16 +98,17 @@ fn parse_response(content: &str) -> Result<ClarificationResult, ProviderError> {
         trimmed
     };
 
-    serde_json::from_str::<ClarificationResult>(json_str).map_err(|e| {
-        ProviderError::Other(format!("failed to parse clarification JSON: {e}"))
-    })
+    serde_json::from_str::<ClarificationResult>(json_str)
+        .map_err(|e| ProviderError::Other(format!("failed to parse clarification JSON: {e}")))
 }
 
 /// Ensure every select question has an "Other (type your own)" option.
 fn add_other_option(questions: &mut [Question]) {
     for q in questions.iter_mut() {
-        if matches!(q.question_type, QuestionType::SingleSelect | QuestionType::MultiSelect)
-            && !q.options.iter().any(|o| o.starts_with("Other"))
+        if matches!(
+            q.question_type,
+            QuestionType::SingleSelect | QuestionType::MultiSelect
+        ) && !q.options.iter().any(|o| o.starts_with("Other"))
         {
             q.options.push("Other (type your own)".into());
         }
@@ -158,7 +159,10 @@ mod tests {
             reason: "test".into(),
         }];
         add_other_option(&mut questions);
-        assert_eq!(questions[0].options.last().unwrap(), "Other (type your own)");
+        assert_eq!(
+            questions[0].options.last().unwrap(),
+            "Other (type your own)"
+        );
     }
 
     #[test]

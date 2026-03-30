@@ -64,7 +64,10 @@ mod tests {
     #[test]
     fn category_display() {
         assert_eq!(Category::Convention.to_string(), "convention");
-        assert_eq!(Category::ArchitectureDecision.to_string(), "architecture-decision");
+        assert_eq!(
+            Category::ArchitectureDecision.to_string(),
+            "architecture-decision"
+        );
     }
 
     #[test]

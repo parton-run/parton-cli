@@ -8,8 +8,8 @@ use super::{multi_select, select, style};
 pub fn run_clarification(prompt: &str, result: &ClarificationResult) -> PlanningContext {
     let mut answers: Vec<(String, String)> = Vec::new();
 
-    let skip = result.questions.is_empty()
-        || (result.sufficient_for_planning && result.confidence >= 0.6);
+    let skip =
+        result.questions.is_empty() || (result.sufficient_for_planning && result.confidence >= 0.6);
     if skip {
         show_assumptions(&result.assumptions, result.confidence);
         return PlanningContext {
@@ -55,11 +55,7 @@ fn ask_question(question: &Question) -> Option<String> {
 
     match question.question_type {
         QuestionType::SingleSelect => {
-            let idx = select::run_select(
-                &question.question,
-                &question.options,
-                0,
-            ).ok()?;
+            let idx = select::run_select(&question.question, &question.options, 0).ok()?;
 
             let chosen = &question.options[idx];
             if chosen.starts_with("Other") {
@@ -69,10 +65,8 @@ fn ask_question(question: &Question) -> Option<String> {
             }
         }
         QuestionType::MultiSelect => {
-            let indices = multi_select::run_multi_select(
-                &question.question,
-                &question.options,
-            ).ok()?;
+            let indices =
+                multi_select::run_multi_select(&question.question, &question.options).ok()?;
 
             let mut chosen: Vec<String> = indices
                 .iter()
@@ -81,14 +75,19 @@ fn ask_question(question: &Question) -> Option<String> {
 
             // If "Other" was selected, ask for custom input.
             if let Some(pos) = chosen.iter().position(|s| s.starts_with("Other")) {
-                if let Some(custom) = ask_free_text(&format!("{} (your answer)", question.question)) {
+                if let Some(custom) = ask_free_text(&format!("{} (your answer)", question.question))
+                {
                     chosen[pos] = custom;
                 } else {
                     chosen.remove(pos);
                 }
             }
 
-            if chosen.is_empty() { None } else { Some(chosen.join(", ")) }
+            if chosen.is_empty() {
+                None
+            } else {
+                Some(chosen.join(", "))
+            }
         }
     }
 }
@@ -103,7 +102,11 @@ fn ask_free_text(prompt: &str) -> Option<String> {
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok()?;
     let trimmed = input.trim().to_string();
-    if trimmed.is_empty() { None } else { Some(trimmed) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 /// Display assumptions and confidence after clarification.

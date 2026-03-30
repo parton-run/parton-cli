@@ -8,9 +8,20 @@ use std::path::Path;
 
 /// Directories to skip during scanning.
 const IGNORED_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", "dist", "build", ".next",
-    "__pycache__", ".venv", "vendor", ".parton", ".cache",
-    ".turbo", ".vercel", "coverage",
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    "__pycache__",
+    ".venv",
+    "vendor",
+    ".parton",
+    ".cache",
+    ".turbo",
+    ".vercel",
+    "coverage",
 ];
 
 const MAX_TREE_DEPTH: usize = 3;
@@ -34,14 +45,13 @@ pub fn build_project_context(project_root: &Path) -> String {
 }
 
 fn build_repo_summary(root: &Path) -> String {
-    let name = root.file_name()
+    let name = root
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "project".into());
     let total = count_files(root);
 
-    format!(
-        "## Repository Summary\n- Project: {name}\n- Total files: {total}"
-    )
+    format!("## Repository Summary\n- Project: {name}\n- Total files: {total}")
 }
 
 fn build_directory_tree(root: &Path) -> String {
@@ -120,7 +130,11 @@ fn summarize_package_json(content: &str) -> String {
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
         for section in ["dependencies", "devDependencies"] {
             if let Some(deps) = val.get(section).and_then(|v| v.as_object()) {
-                let label = if section == "dependencies" { "Dependencies" } else { "Dev" };
+                let label = if section == "dependencies" {
+                    "Dependencies"
+                } else {
+                    "Dev"
+                };
                 lines.push(format!("{label}:"));
                 for (key, ver) in deps {
                     lines.push(format!("  - {key}: {}", ver.as_str().unwrap_or("*")));

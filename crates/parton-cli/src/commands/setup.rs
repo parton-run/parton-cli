@@ -102,7 +102,14 @@ fn build_model_options() -> Vec<ModelOption> {
     }
 
     if has_env("OPENAI_API_KEY") || has_env("PARTON_OPENAI_KEY") {
-        for model in &["gpt-5.4", "gpt-5.4-mini", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"] {
+        for model in &[
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o3",
+            "o4-mini",
+        ] {
             options.push(ModelOption {
                 label: format!("OpenAI API / {model}"),
                 access: AccessType::Api,
@@ -135,17 +142,27 @@ fn detect_ollama_models() -> Option<Vec<String>> {
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
-    if !output.status.success() { return None; }
+    if !output.status.success() {
+        return None;
+    }
     let text = String::from_utf8_lossy(&output.stdout);
-    let models: Vec<String> = text.lines().skip(1)
+    let models: Vec<String> = text
+        .lines()
+        .skip(1)
         .filter_map(|l| l.split_whitespace().next())
         .map(String::from)
         .collect();
-    if models.is_empty() { None } else { Some(models) }
+    if models.is_empty() {
+        None
+    } else {
+        Some(models)
+    }
 }
 
 fn has_env(name: &str) -> bool {
-    std::env::var(name).map(|v| !v.trim().is_empty()).unwrap_or(false)
+    std::env::var(name)
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
 }
 
 fn which(cmd: &str) -> bool {
@@ -167,7 +184,10 @@ fn detect_project_name(root: &Path) -> String {
             }
         }
     }
-    root.file_name().and_then(|n| n.to_str()).unwrap_or("project").to_string()
+    root.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project")
+        .to_string()
 }
 
 fn detect_validation(root: &Path) -> Vec<String> {
@@ -179,12 +199,18 @@ fn detect_validation(root: &Path) -> Vec<String> {
         if let Ok(content) = std::fs::read_to_string(root.join("package.json")) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(scripts) = json.get("scripts").and_then(|s| s.as_object()) {
-                    if scripts.contains_key("build") { cmds.push("npm run build".into()); }
-                    if scripts.contains_key("test") { cmds.push("npm test".into()); }
+                    if scripts.contains_key("build") {
+                        cmds.push("npm run build".into());
+                    }
+                    if scripts.contains_key("test") {
+                        cmds.push("npm test".into());
+                    }
                 }
             }
         }
-        if cmds.is_empty() { cmds.push("npx tsc --noEmit".into()); }
+        if cmds.is_empty() {
+            cmds.push("npx tsc --noEmit".into());
+        }
         return cmds;
     }
     if root.join("go.mod").exists() {

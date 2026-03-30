@@ -54,7 +54,11 @@ impl ParallelProgress {
         {
             let mut items = self.items.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(item) = items.iter_mut().find(|i| i.label == label) {
-                item.status = if success { Status::Done } else { Status::Failed };
+                item.status = if success {
+                    Status::Done
+                } else {
+                    Status::Failed
+                };
                 item.elapsed_ms = elapsed_ms;
             }
         }

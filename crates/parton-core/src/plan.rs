@@ -95,8 +95,14 @@ mod tests {
 
     #[test]
     fn file_action_serializes_correctly() {
-        assert_eq!(serde_json::to_string(&FileAction::Create).unwrap(), r#""Create""#);
-        assert_eq!(serde_json::to_string(&FileAction::Edit).unwrap(), r#""Edit""#);
+        assert_eq!(
+            serde_json::to_string(&FileAction::Create).unwrap(),
+            r#""Create""#
+        );
+        assert_eq!(
+            serde_json::to_string(&FileAction::Edit).unwrap(),
+            r#""Edit""#
+        );
     }
 
     #[test]

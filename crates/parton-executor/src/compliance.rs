@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use parton_core::{FileResult, FilePlan, RunPlan};
+use parton_core::{FilePlan, FileResult, RunPlan};
 
 /// Type of compliance issue found.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,8 +99,7 @@ fn symbol_present(content: &str, symbol: &str, path: &str) -> bool {
     if is_js_ts {
         // "default" export: match `export default`, `module.exports`
         if symbol == "default" {
-            return content.contains("export default")
-                || content.contains("module.exports");
+            return content.contains("export default") || content.contains("module.exports");
         }
 
         let patterns = [

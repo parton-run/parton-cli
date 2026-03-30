@@ -57,7 +57,8 @@ impl GraphStore {
             .conn
             .prepare("SELECT id, path, content_hash FROM files")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(GraphError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(GraphError::from)
     }
 
     /// Insert a symbol. Returns its ID.
@@ -100,7 +101,8 @@ impl GraphStore {
                 line_end: row.get(5)?,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(GraphError::from)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(GraphError::from)
     }
 
     /// Insert a relationship between two symbols.
@@ -122,11 +124,14 @@ impl GraphStore {
         &self,
         symbol_id: SymbolId,
     ) -> Result<Vec<(SymbolId, SymbolId, String)>, GraphError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT source_id, target_id, kind FROM relationships WHERE source_id = ?1",
-        )?;
-        let rows = stmt.query_map([symbol_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(GraphError::from)
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source_id, target_id, kind FROM relationships WHERE source_id = ?1")?;
+        let rows = stmt.query_map([symbol_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(GraphError::from)
     }
 }
 
@@ -209,9 +214,15 @@ mod tests {
     fn insert_and_get_relationships() {
         let store = GraphStore::open_in_memory().unwrap();
         let fid = store.insert_file("a.ts", "h").unwrap();
-        let s1 = store.insert_symbol("A", &SymbolKind::Function, fid, 1, 5, "h1").unwrap();
-        let s2 = store.insert_symbol("B", &SymbolKind::Function, fid, 6, 10, "h2").unwrap();
-        store.insert_relationship(s1, s2, &RelationshipKind::Calls).unwrap();
+        let s1 = store
+            .insert_symbol("A", &SymbolKind::Function, fid, 1, 5, "h1")
+            .unwrap();
+        let s2 = store
+            .insert_symbol("B", &SymbolKind::Function, fid, 6, 10, "h2")
+            .unwrap();
+        store
+            .insert_relationship(s1, s2, &RelationshipKind::Calls)
+            .unwrap();
 
         let rels = store.get_relationships_from(s1).unwrap();
         assert_eq!(rels.len(), 1);

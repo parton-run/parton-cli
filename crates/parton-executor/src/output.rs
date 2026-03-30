@@ -12,12 +12,20 @@ pub fn clean_output(content: &str) -> String {
 
         if let Some(end_idx) = code_start.find("===FILE_END===") {
             let code = code_start[..end_idx].trim_end();
-            return if code.is_empty() { String::new() } else { code.to_string() };
+            return if code.is_empty() {
+                String::new()
+            } else {
+                code.to_string()
+            };
         }
 
         // Start marker but no end — take everything after start.
         let code = code_start.trim_end();
-        return if code.is_empty() { String::new() } else { code.to_string() };
+        return if code.is_empty() {
+            String::new()
+        } else {
+            code.to_string()
+        };
     }
 
     // No markers — invalid output.

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use parton_core::{FileResult, FilePlan, ModelProvider, RunPlan};
+use parton_core::{FilePlan, FileResult, ModelProvider, RunPlan};
 
 use crate::output::clean_output;
 use crate::prompt::build_file_prompt;
@@ -72,7 +72,10 @@ async fn scaffold_single(
     let prompt = build_file_prompt(file, plan, project_root);
     let start = Instant::now();
 
-    match provider.send(scaffold::SCAFFOLD_PROMPT, &prompt, false).await {
+    match provider
+        .send(scaffold::SCAFFOLD_PROMPT, &prompt, false)
+        .await
+    {
         Ok(response) => {
             let (goal, code) = scaffold::parse_scaffold_output(&response.content);
             let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -84,7 +87,11 @@ async fn scaffold_single(
                 enriched_goal: goal,
                 code,
                 success,
-                error: if success { None } else { Some("empty scaffold output".into()) },
+                error: if success {
+                    None
+                } else {
+                    Some("empty scaffold output".into())
+                },
                 tokens_used: tokens,
                 elapsed_ms,
             }
@@ -183,7 +190,11 @@ async fn execute_file(
                 path: file.path.clone(),
                 content,
                 success,
-                error: if success { None } else { Some("empty output".into()) },
+                error: if success {
+                    None
+                } else {
+                    Some("empty output".into())
+                },
                 tokens_used: tokens,
                 elapsed_ms,
             }
@@ -234,12 +245,18 @@ mod tests {
     use async_trait::async_trait;
     use parton_core::{FileAction, ModelResponse, ProviderError};
 
-    struct MockProvider { response: String }
+    struct MockProvider {
+        response: String,
+    }
 
     #[async_trait]
     impl ModelProvider for MockProvider {
         async fn send(&self, _: &str, _: &str, _: bool) -> Result<ModelResponse, ProviderError> {
-            Ok(ModelResponse { content: self.response.clone(), prompt_tokens: 10, completion_tokens: 5 })
+            Ok(ModelResponse {
+                content: self.response.clone(),
+                prompt_tokens: 10,
+                completion_tokens: 5,
+            })
         }
     }
 
@@ -254,7 +271,7 @@ mod tests {
                 must_export: vec![],
                 must_import_from: vec![],
                 context_files: vec![],
-            scaffold_only: false,
+                scaffold_only: false,
             }],
             install_command: None,
             check_commands: vec![],
@@ -266,7 +283,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_success() {
-        let provider = MockProvider { response: "===FILE_START===\nconst x = 1;\n===FILE_END===".into() };
+        let provider = MockProvider {
+            response: "===FILE_START===\nconst x = 1;\n===FILE_END===".into(),
+        };
         let dir = tempfile::tempdir().unwrap();
         let results = execute(&test_plan(), &provider, dir.path(), ExecMode::Full).await;
         assert!(results[0].success);
@@ -275,7 +294,9 @@ mod tests {
 
     #[tokio::test]
     async fn execute_empty_output() {
-        let provider = MockProvider { response: "no markers".into() };
+        let provider = MockProvider {
+            response: "no markers".into(),
+        };
         let dir = tempfile::tempdir().unwrap();
         let results = execute(&test_plan(), &provider, dir.path(), ExecMode::Full).await;
         assert!(!results[0].success);

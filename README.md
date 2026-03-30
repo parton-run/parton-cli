@@ -13,6 +13,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/parton-run/parton-cli/actions/workflows/ci.yml"><img src="https://github.com/parton-run/parton-cli/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/parton-run/parton-cli/releases"><img src="https://img.shields.io/github/v/release/parton-run/parton-cli?color=green" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://parton.run"><img src="https://img.shields.io/badge/docs-parton.run-purple" alt="Docs" /></a>
+</p>
+
+<p align="center">
   <a href="https://parton.run">Website</a> &middot;
   <a href="https://parton.run/docs">Docs</a> &middot;
   <a href="https://github.com/parton-run/parton-cli/releases">Releases</a>

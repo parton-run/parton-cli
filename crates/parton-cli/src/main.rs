@@ -61,15 +61,17 @@ fn main() -> Result<()> {
         .init();
 
     match cli.command {
-        Some(Command::Run { prompt, path, review }) => {
+        Some(Command::Run {
+            prompt,
+            path,
+            review,
+        }) => {
             let prompt_str = prompt.join(" ");
-            let project_root = std::fs::canonicalize(&path)
-                .unwrap_or_else(|_| path.clone());
+            let project_root = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             commands::run::run(&prompt_str, &project_root, review)
         }
         Some(Command::Setup { path }) => {
-            let project_root = std::fs::canonicalize(&path)
-                .unwrap_or_else(|_| path.clone());
+            let project_root = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             commands::setup::run_setup(&project_root)?;
             Ok(())
         }

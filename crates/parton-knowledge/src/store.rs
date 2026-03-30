@@ -141,8 +141,7 @@ impl KnowledgeStore for LocalStore {
                 let text_match = query.is_empty()
                     || e.title.to_lowercase().contains(&query_lower)
                     || e.content.to_lowercase().contains(&query_lower);
-                let tag_match =
-                    tags.is_empty() || e.tags.iter().any(|t| tags.contains(t));
+                let tag_match = tags.is_empty() || e.tags.iter().any(|t| tags.contains(t));
                 text_match && tag_match
             })
             .collect())

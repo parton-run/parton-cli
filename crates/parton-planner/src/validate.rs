@@ -65,9 +65,11 @@ pub fn validate_plan(plan: &RunPlan, project_root: &Path) -> Result<(), Validati
     let logic_files: Vec<&str> = all_paths
         .iter()
         .filter(|p| {
-            !p.contains(".test.") && !p.contains(".spec.")
+            !p.contains(".test.")
+                && !p.contains(".spec.")
                 && !config_extensions.iter().any(|ext| p.ends_with(ext))
-                && !p.ends_with(".css") && !p.ends_with(".html")
+                && !p.ends_with(".css")
+                && !p.ends_with(".html")
         })
         .copied()
         .collect();
@@ -132,7 +134,10 @@ mod tests {
 
     #[test]
     fn valid_plan_passes() {
-        let plan = make_plan(vec![simple_file("src/app.ts"), simple_file("src/app.test.ts")]);
+        let plan = make_plan(vec![
+            simple_file("src/app.ts"),
+            simple_file("src/app.test.ts"),
+        ]);
         let dir = tempfile::tempdir().unwrap();
         assert!(validate_plan(&plan, dir.path()).is_ok());
     }
@@ -149,10 +154,7 @@ mod tests {
 
     #[test]
     fn duplicate_path_fails() {
-        let plan = make_plan(vec![
-            simple_file("src/app.ts"),
-            simple_file("src/app.ts"),
-        ]);
+        let plan = make_plan(vec![simple_file("src/app.ts"), simple_file("src/app.ts")]);
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(
             validate_plan(&plan, dir.path()),
@@ -179,7 +181,11 @@ mod tests {
             path: "src/a.ts".into(),
             symbols: vec!["Foo".into()],
         }];
-        let plan = make_plan(vec![simple_file("src/a.ts"), file_b, simple_file("src/a.test.ts")]);
+        let plan = make_plan(vec![
+            simple_file("src/a.ts"),
+            file_b,
+            simple_file("src/a.test.ts"),
+        ]);
         let dir = tempfile::tempdir().unwrap();
         assert!(validate_plan(&plan, dir.path()).is_ok());
     }

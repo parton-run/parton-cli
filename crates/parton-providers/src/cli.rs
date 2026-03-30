@@ -39,11 +39,9 @@ impl ModelProvider for CliProvider {
             format!("{system}\n\n{prompt}")
         };
 
-        tokio::task::spawn_blocking(move || {
-            send_sync(&command, model.as_deref(), &full_prompt)
-        })
-        .await
-        .map_err(|e| ProviderError::Other(format!("spawn_blocking failed: {e}")))?
+        tokio::task::spawn_blocking(move || send_sync(&command, model.as_deref(), &full_prompt))
+            .await
+            .map_err(|e| ProviderError::Other(format!("spawn_blocking failed: {e}")))?
     }
 }
 
@@ -61,9 +59,9 @@ fn send_sync(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| {
-        ProviderError::Other(format!("failed to execute '{command}': {e}"))
-    })?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ProviderError::Other(format!("failed to execute '{command}': {e}")))?;
 
     // Write prompt to stdin.
     if let Some(mut stdin) = child.stdin.take() {

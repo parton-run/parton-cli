@@ -21,8 +21,7 @@ impl OllamaProvider {
     /// If `model` is `None`, defaults to `qwen2.5-coder:7b`.
     /// Reads `OLLAMA_BASE_URL` from env or defaults to `localhost:11434`.
     pub fn new(model: Option<String>) -> Self {
-        let base_url = std::env::var("OLLAMA_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_BASE_URL.into());
+        let base_url = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.into());
         let model = model.unwrap_or_else(|| {
             std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into())
         });
@@ -53,17 +52,12 @@ impl ModelProvider for OllamaProvider {
             stream: false,
         };
 
-        let resp = client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
-                ProviderError::Network(format!(
-                    "ollama request failed (is ollama running at {}?): {}",
-                    self.base_url, e
-                ))
-            })?;
+        let resp = client.post(&url).json(&request).send().await.map_err(|e| {
+            ProviderError::Network(format!(
+                "ollama request failed (is ollama running at {}?): {}",
+                self.base_url, e
+            ))
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -73,9 +67,10 @@ impl ModelProvider for OllamaProvider {
             )));
         }
 
-        let result: GenerateResponse = resp.json().await.map_err(|e| {
-            ProviderError::Other(format!("failed to parse ollama response: {e}"))
-        })?;
+        let result: GenerateResponse = resp
+            .json()
+            .await
+            .map_err(|e| ProviderError::Other(format!("failed to parse ollama response: {e}")))?;
 
         Ok(ModelResponse {
             content: result.response,

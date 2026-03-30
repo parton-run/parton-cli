@@ -80,7 +80,11 @@ fn render(
 
     // Header with count.
     let header = Paragraph::new(format!("{title} (selected: {selected_count})"))
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::BOTTOM));
     frame.render_widget(header, chunks[0]);
 

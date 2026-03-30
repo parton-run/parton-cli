@@ -34,8 +34,7 @@ pub fn parse_plan(content: &str) -> Result<RunPlan, ParseError> {
     let end = find_matching_brace(trimmed, start).ok_or(ParseError::UnbalancedBraces)?;
 
     let json_str = &trimmed[start..=end];
-    serde_json::from_str::<RunPlan>(json_str)
-        .map_err(|e| ParseError::Malformed(e.to_string()))
+    serde_json::from_str::<RunPlan>(json_str).map_err(|e| ParseError::Malformed(e.to_string()))
 }
 
 /// Find the closing `}` that matches the opening `{` at `start`.
@@ -78,7 +77,8 @@ mod tests {
 
     #[test]
     fn parse_json_with_surrounding_text() {
-        let input = r#"Here's the plan: {"summary":"test","files":[],"validation_commands":[]} done!"#;
+        let input =
+            r#"Here's the plan: {"summary":"test","files":[],"validation_commands":[]} done!"#;
         let plan = parse_plan(input).unwrap();
         assert_eq!(plan.summary, "test");
     }

@@ -137,9 +137,8 @@ pub async fn generate_skeleton(
 
     let response = provider.send(&system, prompt, false).await?;
 
-    crate::parse_plan(&response.content).map_err(|e| {
-        ProviderError::Other(format!("failed to parse skeleton plan: {e}"))
-    })
+    crate::parse_plan(&response.content)
+        .map_err(|e| ProviderError::Other(format!("failed to parse skeleton plan: {e}")))
 }
 
 /// Enrich all file goals in parallel.
@@ -158,16 +157,17 @@ pub async fn enrich_plan(
     } else {
         format!(
             "Project conventions:\n{}",
-            plan.conventions.iter().map(|c| format!("- {c}")).collect::<Vec<_>>().join("\n")
+            plan.conventions
+                .iter()
+                .map(|c| format!("- {c}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     };
 
     // Only enrich files that need final execution — skip scaffold_only files.
-    let files_to_enrich: Vec<&parton_core::FilePlan> = plan
-        .files
-        .iter()
-        .filter(|f| !f.scaffold_only)
-        .collect();
+    let files_to_enrich: Vec<&parton_core::FilePlan> =
+        plan.files.iter().filter(|f| !f.scaffold_only).collect();
 
     // Immediately mark scaffold_only files as enriched.
     for file in plan.files.iter().filter(|f| f.scaffold_only) {
@@ -209,29 +209,34 @@ async fn enrich_single_file(
         context_parts.push(conventions.to_string());
     }
 
-    context_parts.push(format!("File: {} ({})", file.path, match file.action {
-        parton_core::FileAction::Create => "Create",
-        parton_core::FileAction::Edit => "Edit",
-    }));
+    context_parts.push(format!(
+        "File: {} ({})",
+        file.path,
+        match file.action {
+            parton_core::FileAction::Create => "Create",
+            parton_core::FileAction::Edit => "Edit",
+        }
+    ));
 
     context_parts.push(format!("Current goal: {}", file.goal));
 
     if !file.must_export.is_empty() {
-        context_parts.push(format!(
-            "Must export: {}",
-            file.must_export.join(", ")
-        ));
+        context_parts.push(format!("Must export: {}", file.must_export.join(", ")));
     }
 
     if !file.must_import_from.is_empty() {
-        let imports: Vec<String> = file.must_import_from.iter().map(|imp| {
-            format!("from {}: {}", imp.path, imp.symbols.join(", "))
-        }).collect();
+        let imports: Vec<String> = file
+            .must_import_from
+            .iter()
+            .map(|imp| format!("from {}: {}", imp.path, imp.symbols.join(", ")))
+            .collect();
         context_parts.push(format!("Imports: {}", imports.join("; ")));
     }
 
     // Include sibling file summaries so enrich knows the full picture.
-    let siblings: Vec<String> = plan.files.iter()
+    let siblings: Vec<String> = plan
+        .files
+        .iter()
         .filter(|f| f.path != file.path)
         .map(|f| {
             let exports = if f.must_export.is_empty() {

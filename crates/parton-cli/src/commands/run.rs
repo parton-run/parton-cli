@@ -35,17 +35,19 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let is_greenfield = is_greenfield_project(project_root);
 
     let spin = spinner::Spinner::start("Analyzing...");
-    let clarification = rt.block_on(async {
-        parton_planner::generate_questions(prompt, is_greenfield, &*planning_provider).await
-    }).unwrap_or_else(|e| {
-        tracing::warn!("Clarification failed: {e}");
-        parton_core::ClarificationResult {
-            questions: vec![],
-            assumptions: vec![],
-            confidence: 0.5,
-            sufficient_for_planning: true,
-        }
-    });
+    let clarification = rt
+        .block_on(async {
+            parton_planner::generate_questions(prompt, is_greenfield, &*planning_provider).await
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!("Clarification failed: {e}");
+            parton_core::ClarificationResult {
+                questions: vec![],
+                assumptions: vec![],
+                confidence: 0.5,
+                sufficient_for_planning: true,
+            }
+        });
     spin.stop();
 
     let planning_ctx = clarify::run_clarification(prompt, &clarification);
@@ -77,13 +79,19 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             } else {
                 "Retrying..."
             });
-            let skel = rt.block_on(async {
-                parton_planner::generate_skeleton(&prompt, &project_ctx, &*planning_provider).await
-            }).map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
+            let skel = rt
+                .block_on(async {
+                    parton_planner::generate_skeleton(&prompt, &project_ctx, &*planning_provider)
+                        .await
+                })
+                .map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
             spin.stop();
 
             match parton_planner::validate_plan(&skel, project_root) {
-                Ok(()) => { result = Some(skel); break; }
+                Ok(()) => {
+                    result = Some(skel);
+                    break;
+                }
                 Err(e) => {
                     style::print_err(&format!("Validation: {e}"));
                     last_error = e.to_string();
@@ -106,9 +114,16 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                 let comment_text = format_comments(&comments);
                 let replan_prompt = format!("{enriched_prompt}\n\n## Feedback\n{comment_text}");
                 let spin = spinner::Spinner::start("Replanning...");
-                plan = rt.block_on(async {
-                    parton_planner::generate_skeleton(&replan_prompt, &project_ctx, &*planning_provider).await
-                }).map_err(|e| anyhow::anyhow!("replan failed: {e}"))?;
+                plan = rt
+                    .block_on(async {
+                        parton_planner::generate_skeleton(
+                            &replan_prompt,
+                            &project_ctx,
+                            &*planning_provider,
+                        )
+                        .await
+                    })
+                    .map_err(|e| anyhow::anyhow!("replan failed: {e}"))?;
                 spin.stop();
                 style::print_ok(&format!("Revised: {} files", plan.files.len()));
             }
@@ -126,10 +141,10 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let _ticker = scaffold_prog.start_ticker();
 
     let scaffold_results = rt.block_on(async {
-        parton_executor::scaffold_streaming(
-            &plan, &*exec_provider, project_root,
-            &|r| scaffold_prog.complete(&r.path, r.elapsed_ms, r.success),
-        ).await
+        parton_executor::scaffold_streaming(&plan, &*exec_provider, project_root, &|r| {
+            scaffold_prog.complete(&r.path, r.elapsed_ms, r.success)
+        })
+        .await
     });
     drop(_ticker);
 
@@ -159,8 +174,11 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         let spin = spinner::Spinner::start(&format!("Installing deps ({cmd})..."));
         let ok = parton_executor::run_install(cmd, project_root);
         spin.stop();
-        if ok { style::print_ok("Dependencies installed"); }
-        else { style::print_err("Install failed"); }
+        if ok {
+            style::print_ok("Dependencies installed");
+        } else {
+            style::print_err("Install failed");
+        }
     }
 
     // Structure check.
@@ -186,18 +204,27 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             p
         };
         if !config_fix_plan.files.is_empty() {
-            let fix_labels: Vec<String> = config_fix_plan.files.iter().map(|f| f.path.clone()).collect();
+            let fix_labels: Vec<String> = config_fix_plan
+                .files
+                .iter()
+                .map(|f| f.path.clone())
+                .collect();
             let fix_prog = progress::ParallelProgress::new(&fix_labels);
             let _t = fix_prog.start_ticker();
             let fix_results = rt.block_on(async {
                 parton_executor::execute_streaming(
-                    &config_fix_plan, &*exec_provider, project_root,
-                    parton_executor::ExecMode::Final, &check.errors,
+                    &config_fix_plan,
+                    &*exec_provider,
+                    project_root,
+                    parton_executor::ExecMode::Final,
+                    &check.errors,
                     &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
-                ).await
+                )
+                .await
             });
             drop(_t);
-            let fix_ok: Vec<FileResult> = fix_results.iter().filter(|r| r.success).cloned().collect();
+            let fix_ok: Vec<FileResult> =
+                fix_results.iter().filter(|r| r.success).cloned().collect();
             let _ = parton_executor::write_results(&fix_ok, project_root);
 
             // Re-check.
@@ -226,17 +253,25 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
 
     let final_results = rt.block_on(async {
         parton_executor::execute_streaming(
-            &final_plan, &*exec_provider, project_root,
-            parton_executor::ExecMode::Final, &structure_errors,
+            &final_plan,
+            &*exec_provider,
+            project_root,
+            parton_executor::ExecMode::Final,
+            &structure_errors,
             &|r| final_prog.complete(&r.path, r.elapsed_ms, r.success),
-        ).await
+        )
+        .await
     });
     drop(_ticker);
 
     // Compliance check (only on files that went through final execution).
     let issues = parton_executor::check_all(&final_plan, &final_results);
     if issues.is_empty() {
-        style::print_ok(&format!("Compliance: {}/{} OK", final_plan.files.len(), final_plan.files.len()));
+        style::print_ok(&format!(
+            "Compliance: {}/{} OK",
+            final_plan.files.len(),
+            final_plan.files.len()
+        ));
     } else {
         for issue in &issues {
             style::print_err(&format!("{}: {}", issue.file_path, issue.message));
@@ -244,12 +279,19 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     }
 
     // Write final files to disk (only logic files — config already written by scaffold).
-    let final_ok: Vec<FileResult> = final_results.iter().filter(|r| r.success).cloned().collect();
-    let written_final = parton_executor::write_results(&final_ok, project_root)
-        .context("failed to write files")?;
+    let final_ok: Vec<FileResult> = final_results
+        .iter()
+        .filter(|r| r.success)
+        .cloned()
+        .collect();
+    let written_final =
+        parton_executor::write_results(&final_ok, project_root).context("failed to write files")?;
     let total_written = scaffold_written.len() + written_final.len();
-    style::print_ok(&format!("{total_written} files total ({} scaffold + {} final)",
-        scaffold_written.len(), written_final.len()));
+    style::print_ok(&format!(
+        "{total_written} files total ({} scaffold + {} final)",
+        scaffold_written.len(),
+        written_final.len()
+    ));
 
     // ── Step 6: Validation (with auto-fix retry) ──
     if !plan.validation_commands.is_empty() {
@@ -264,14 +306,19 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             let _ticker = fix_prog.start_ticker();
             let fix_results = rt.block_on(async {
                 parton_executor::execute_streaming(
-                    &final_plan, &*exec_provider, project_root,
-                    parton_executor::ExecMode::Final, &val_result.errors,
+                    &final_plan,
+                    &*exec_provider,
+                    project_root,
+                    parton_executor::ExecMode::Final,
+                    &val_result.errors,
                     &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
-                ).await
+                )
+                .await
             });
             drop(_ticker);
 
-            let fix_ok: Vec<FileResult> = fix_results.iter().filter(|r| r.success).cloned().collect();
+            let fix_ok: Vec<FileResult> =
+                fix_results.iter().filter(|r| r.success).cloned().collect();
             let _ = parton_executor::write_results(&fix_ok, project_root);
 
             // Re-validate.
@@ -299,13 +346,21 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         written_final.join(", "),
     );
     let _ = rt.block_on(parton_knowledge::extract_and_store(
-        &summary, &*planning_provider, &knowledge_store,
+        &summary,
+        &*planning_provider,
+        &knowledge_store,
     ));
 
     eprintln!();
     style::print_header("Done");
-    style::print_kv("Files", &format!("{total_written} written, {failed} failed"));
-    style::print_kv("Tokens", &format!("{total_tokens} (scaffold: {scaffold_tokens}, final: {final_tokens})"));
+    style::print_kv(
+        "Files",
+        &format!("{total_written} written, {failed} failed"),
+    );
+    style::print_kv(
+        "Tokens",
+        &format!("{total_tokens} (scaffold: {scaffold_tokens}, final: {final_tokens})"),
+    );
     style::print_kv("Time", &format!("{:.1}s", elapsed.as_secs_f64()));
     eprintln!();
 
@@ -319,10 +374,14 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
 // ── Helpers ──
 
 fn format_comments(comments: &[plan_review::ReviewComment]) -> String {
-    comments.iter().map(|c| match &c.file {
-        Some(path) => format!("- [{}] {}", path, c.text),
-        None => format!("- [GENERAL] {}", c.text),
-    }).collect::<Vec<_>>().join("\n")
+    comments
+        .iter()
+        .map(|c| match &c.file {
+            Some(path) => format!("- [{}] {}", path, c.text),
+            None => format!("- [GENERAL] {}", c.text),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn load_or_setup(project_root: &Path) -> Result<PartonConfig> {
@@ -359,7 +418,8 @@ fn run_validation_check(commands: &[String], project_root: &Path) -> parton_exec
     for cmd in commands {
         // Check each individually for display.
         let output = std::process::Command::new("sh")
-            .arg("-c").arg(cmd)
+            .arg("-c")
+            .arg(cmd)
             .current_dir(project_root)
             .env("CI", "true")
             .output();
@@ -382,7 +442,8 @@ fn run_validation_check(commands: &[String], project_root: &Path) -> parton_exec
 fn run_validation(commands: &[String], project_root: &Path) {
     for cmd in commands {
         let output = std::process::Command::new("sh")
-            .arg("-c").arg(cmd)
+            .arg("-c")
+            .arg(cmd)
             .current_dir(project_root)
             .env("CI", "true")
             .output();

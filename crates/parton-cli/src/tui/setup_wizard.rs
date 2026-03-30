@@ -81,8 +81,8 @@ impl WizardState {
             self.selections[0]
         } else {
             match self.selections[tab] {
-                None => None,      // Use default.
-                Some(0) => None,   // "Use default" selected.
+                None => None,           // Use default.
+                Some(0) => None,        // "Use default" selected.
                 Some(i) => Some(i - 1), // Offset by 1 for the "Use default" row.
             }
         }
@@ -111,7 +111,11 @@ pub fn run_wizard(models: Vec<String>) -> io::Result<WizardResult> {
                     }
                 }
                 KeyCode::BackTab | KeyCode::Left => {
-                    state.active_tab = if state.active_tab == 0 { 3 } else { state.active_tab - 1 };
+                    state.active_tab = if state.active_tab == 0 {
+                        3
+                    } else {
+                        state.active_tab - 1
+                    };
                     if state.list_states[state.active_tab].selected().is_none() {
                         state.list_states[state.active_tab].select(Some(0));
                     }
@@ -170,7 +174,7 @@ fn render_wizard(frame: &mut Frame, state: &mut WizardState) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Title.
         Constraint::Length(3), // Tabs.
-        Constraint::Min(0),   // Model list.
+        Constraint::Min(0),    // Model list.
         Constraint::Length(3), // Summary.
         Constraint::Length(1), // Footer.
     ])
@@ -178,7 +182,11 @@ fn render_wizard(frame: &mut Frame, state: &mut WizardState) {
 
     // Title.
     let title = Paragraph::new("  Parton Setup — Model Configuration")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::BOTTOM));
     frame.render_widget(title, chunks[0]);
 
@@ -254,14 +262,17 @@ fn render_wizard(frame: &mut Frame, state: &mut WizardState) {
     frame.render_widget(summary_widget, chunks[3]);
 
     // Footer.
-    let footer = Paragraph::new("  ←→/Tab switch stage  ↑↓ navigate  Enter select & next  q cancel")
-        .style(Style::default().fg(Color::DarkGray));
+    let footer =
+        Paragraph::new("  ←→/Tab switch stage  ↑↓ navigate  Enter select & next  q cancel")
+            .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(footer, chunks[4]);
 }
 
 /// Build the summary line showing selections across all stages.
 fn build_summary(state: &WizardState) -> String {
-    let default_name = state.models.get(state.selections[0].unwrap_or(0))
+    let default_name = state
+        .models
+        .get(state.selections[0].unwrap_or(0))
         .cloned()
         .unwrap_or_else(|| "?".into());
 

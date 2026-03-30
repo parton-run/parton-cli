@@ -54,9 +54,13 @@ mod tests {
         initialize(&conn).unwrap();
 
         // Verify tables exist by querying them.
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
     }
 

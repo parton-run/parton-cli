@@ -154,7 +154,8 @@ fn detect_conventions(root: &Path) -> Vec<Entry> {
                 id: "convention-module-system".into(),
                 category: Category::Convention,
                 title: "Module system: ESM".into(),
-                content: "Package uses ESM (type: module). Use import/export, not require().".into(),
+                content: "Package uses ESM (type: module). Use import/export, not require()."
+                    .into(),
                 tags: vec!["esm".into(), "imports".into()],
                 source: Source::Auto,
             });
@@ -179,7 +180,11 @@ mod tests {
     #[test]
     fn detect_stack_node_ts() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("package.json"), r#"{"dependencies":{"react":"^18"}}"#).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"dependencies":{"react":"^18"}}"#,
+        )
+        .unwrap();
         std::fs::write(dir.path().join("tsconfig.json"), "{}").unwrap();
 
         let stack = detect_stack(dir.path()).unwrap();
@@ -223,7 +228,11 @@ mod tests {
     #[test]
     fn detect_conventions_vitest() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("package.json"), r#"{"devDependencies":{"vitest":"^1"}}"#).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"vitest":"^1"}}"#,
+        )
+        .unwrap();
 
         let convs = detect_conventions(dir.path());
         assert!(convs.iter().any(|e| e.title.contains("Vitest")));

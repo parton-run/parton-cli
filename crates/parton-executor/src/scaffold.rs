@@ -58,11 +58,9 @@ CRITICAL RULES:
 pub fn parse_scaffold_output(content: &str) -> (String, String) {
     let trimmed = content.trim();
 
-    let goal = extract_between(trimmed, "===GOAL_START===", "===GOAL_END===")
-        .unwrap_or_default();
+    let goal = extract_between(trimmed, "===GOAL_START===", "===GOAL_END===").unwrap_or_default();
 
-    let code = extract_between(trimmed, "===FILE_START===", "===FILE_END===")
-        .unwrap_or_default();
+    let code = extract_between(trimmed, "===FILE_START===", "===FILE_END===").unwrap_or_default();
 
     (goal, code)
 }
@@ -74,10 +72,18 @@ fn extract_between(content: &str, start_marker: &str, end_marker: &str) -> Optio
 
     if let Some(end) = code_start.find(end_marker) {
         let text = code_start[..end].trim_end();
-        if text.is_empty() { None } else { Some(text.to_string()) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        }
     } else {
         let text = code_start.trim_end();
-        if text.is_empty() { None } else { Some(text.to_string()) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        }
     }
 }
 
