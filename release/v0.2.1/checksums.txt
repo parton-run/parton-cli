@@ -1,0 +1,2 @@
+40a96de700ee5c8cae60a6153fbf7edfd4dcab9c21024437711cde1e0b1a1acf  parton-darwin-arm64
+f63d71c5ad2fdd0360d5660767c83ce268f9e8fc6698392e3fd8f70e6204f783  parton-darwin-x64

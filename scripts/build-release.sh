@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build release binaries for Parton CLI.
+# Build release binaries + install script for Parton CLI.
 # Usage:
 #   ./scripts/build-release.sh              # build all targets
 #   ./scripts/build-release.sh macos        # macOS only (arm64 + x86_64)
 #   ./scripts/build-release.sh macos-arm64  # single target
+#   ./scripts/build-release.sh linux        # Linux x86_64 via Docker
 
 VERSION="${VERSION:-$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')}"
 RELEASE_DIR="release/v${VERSION}"
@@ -58,15 +59,114 @@ build_linux_x86() {
     echo "  ✔ ${BIN_NAME}-linux-x64"
 }
 
+generate_checksums() {
+    echo "→ Generating checksums..."
+    cd "$RELEASE_DIR"
+    shasum -a 256 parton-* > checksums.txt 2>/dev/null || sha256sum parton-* > checksums.txt 2>/dev/null || true
+    cd - > /dev/null
+    if [ -f "${RELEASE_DIR}/checksums.txt" ]; then
+        echo "  ✔ checksums.txt"
+    fi
+}
+
+generate_install_script() {
+    echo "→ Generating install.sh..."
+
+    cat > "${RELEASE_DIR}/install.sh" << 'INSTALLER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Parton installer
+# Usage: curl -fsSL https://parton.run/install.sh | sh
+
+INSTALLER
+
+    cat >> "${RELEASE_DIR}/install.sh" << INSTALLER
+VERSION="\${PARTON_VERSION:-v${VERSION}}"
+INSTALLER
+
+    cat >> "${RELEASE_DIR}/install.sh" << 'INSTALLER'
+BASE_URL="https://github.com/parton-run/parton-cli/releases/download"
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "$OS" in
+  Darwin) PLATFORM="darwin" ;;
+  Linux)  PLATFORM="linux" ;;
+  *)
+    echo "Unsupported OS: $OS"
+    exit 1
+    ;;
+esac
+
+case "$ARCH" in
+  arm64|aarch64) ARCH_NAME="arm64" ;;
+  x86_64)        ARCH_NAME="x64" ;;
+  *)
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+    ;;
+esac
+
+BINARY_NAME="parton-${PLATFORM}-${ARCH_NAME}"
+DOWNLOAD_URL="${BASE_URL}/${VERSION}/${BINARY_NAME}"
+
+TMP_DIR="$(mktemp -d)"
+TMP_BIN="${TMP_DIR}/parton"
+
+echo "Installing Parton ${VERSION} for ${PLATFORM}-${ARCH_NAME}..."
+curl -fL "$DOWNLOAD_URL" -o "$TMP_BIN"
+chmod +x "$TMP_BIN"
+
+if [ -d "$HOME/.local/bin" ]; then
+  INSTALL_DIR="$HOME/.local/bin"
+else
+  INSTALL_DIR="/usr/local/bin"
+fi
+
+mkdir -p "$INSTALL_DIR"
+
+if [ -w "$INSTALL_DIR" ]; then
+  mv "$TMP_BIN" "$INSTALL_DIR/parton"
+else
+  echo "Need elevated permissions to install to $INSTALL_DIR"
+  sudo mv "$TMP_BIN" "$INSTALL_DIR/parton"
+fi
+
+rm -rf "$TMP_DIR"
+
+echo ""
+echo "Parton installed to: $INSTALL_DIR/parton"
+echo ""
+
+if command -v parton >/dev/null 2>&1; then
+  parton version
+  echo ""
+  echo "Run: parton run \"your task here\""
+else
+  echo "Make sure $INSTALL_DIR is in your PATH:"
+  echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+fi
+INSTALLER
+
+    chmod +x "${RELEASE_DIR}/install.sh"
+    echo "  ✔ install.sh (default version: v${VERSION})"
+}
+
 case "${1:-all}" in
     all)
         build_macos_arm64
         build_macos_x86
         build_linux_x86
+        generate_checksums
+        generate_install_script
         ;;
     macos)
         build_macos_arm64
         build_macos_x86
+        generate_checksums
+        generate_install_script
         ;;
     macos-arm64)
         build_macos_arm64
