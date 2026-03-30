@@ -43,10 +43,7 @@ fn scaffold_file(path: &str) -> FilePlan {
 
 #[test]
 fn valid_plan_passes() {
-    let plan = make_plan(vec![
-        logic_file("src/app.ts"),
-        test_file("src/app.test.ts"),
-    ]);
+    let plan = make_plan(vec![logic_file("src/app.ts"), test_file("src/app.test.ts")]);
     let dir = tempfile::tempdir().unwrap();
     assert!(validate_plan(&plan, dir.path()).is_ok());
 }
@@ -63,10 +60,7 @@ fn empty_plan_fails() {
 
 #[test]
 fn duplicate_path_fails() {
-    let plan = make_plan(vec![
-        logic_file("src/app.ts"),
-        logic_file("src/app.ts"),
-    ]);
+    let plan = make_plan(vec![logic_file("src/app.ts"), logic_file("src/app.ts")]);
     let dir = tempfile::tempdir().unwrap();
     assert!(matches!(
         validate_plan(&plan, dir.path()),
@@ -135,11 +129,7 @@ fn import_in_plan_passes() {
 fn import_on_disk_passes() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
-    std::fs::write(
-        dir.path().join("src/existing.ts"),
-        "export const X = 1;",
-    )
-    .unwrap();
+    std::fs::write(dir.path().join("src/existing.ts"), "export const X = 1;").unwrap();
 
     let mut file = logic_file("src/new.ts");
     file.must_import_from = vec![ImportRef {
