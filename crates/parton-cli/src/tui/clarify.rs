@@ -63,7 +63,7 @@ fn ask_question(question: &Question) -> Option<String> {
 
             let chosen = &question.options[idx];
             if chosen.starts_with("Other") {
-                ask_free_text("Your answer")
+                ask_free_text(&format!("{} (your answer)", question.question))
             } else {
                 Some(chosen.clone())
             }
@@ -81,7 +81,7 @@ fn ask_question(question: &Question) -> Option<String> {
 
             // If "Other" was selected, ask for custom input.
             if let Some(pos) = chosen.iter().position(|s| s.starts_with("Other")) {
-                if let Some(custom) = ask_free_text("Your custom answer") {
+                if let Some(custom) = ask_free_text(&format!("{} (your answer)", question.question)) {
                     chosen[pos] = custom;
                 } else {
                     chosen.remove(pos);
