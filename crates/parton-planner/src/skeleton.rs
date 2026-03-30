@@ -91,7 +91,14 @@ PHASING: max 15 files per phase. Set done=false if more needed.
 
 ALL scripts must be non-interactive and terminate on their own (CI=true, no stdin).
 CRITICAL: if the test runner defaults to watch mode you MUST configure it to run once and exit.
-Example: for vitest the test script must be 'vitest run' NOT 'vitest'. For jest: '--watchAll=false'.
+
+VERSIONS AND CONFIGURATION — CRITICAL:
+- Use LATEST STABLE versions of ALL dependencies, tools, and frameworks. Not outdated, not canary, not beta.
+- Config files (tsconfig, build config, etc.) MUST be compatible with the dependency versions you specify.
+- If you add a dependency, the config files MUST support it. Example: if using React 19, the TypeScript config must support JSX transform for React 19. If using Tailwind v4, the config must use v4 syntax.
+- The build command in validation_commands MUST pass with the exact config and dependency versions you chose.
+- THINK about version compatibility: new major versions often have breaking config changes. Use config patterns that match the versions.
+- Test that your mental model is consistent: dependency versions ↔ config files ↔ build commands ↔ source code patterns must all agree.
 
 Return valid JSON only."#;
 
