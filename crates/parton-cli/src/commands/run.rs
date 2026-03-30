@@ -328,10 +328,11 @@ fn create_provider(stage: StageKind, config: &PartonConfig) -> Result<Box<dyn Mo
 
 /// Determine if a file needs final execution or if scaffold version is sufficient.
 ///
-/// Files with no exports are config/static — scaffold is final.
-/// Files with exports contain logic and need full implementation.
+/// The goal length is a proxy — config files have short goals ("Create package.json with..."),
+/// logic files have long enriched goals with signatures and behavior.
+/// Files with exports or substantial goals (>100 chars) need final execution.
 fn needs_final_execution(file: &parton_core::FilePlan) -> bool {
-    !file.must_export.is_empty() || file.path.contains(".test.") || file.path.contains(".spec.")
+    !file.must_export.is_empty() || file.goal.len() > 100
 }
 
 fn is_greenfield_project(root: &Path) -> bool {
