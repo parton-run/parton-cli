@@ -438,25 +438,3 @@ fn run_validation_check(commands: &[String], project_root: &Path) -> parton_exec
     result
 }
 
-#[allow(dead_code)]
-fn run_validation(commands: &[String], project_root: &Path) {
-    for cmd in commands {
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(project_root)
-            .env("CI", "true")
-            .output();
-        match output {
-            Ok(o) if o.status.success() => style::print_ok(cmd),
-            Ok(o) => {
-                style::print_err(&format!("{cmd} (exit {})", o.status.code().unwrap_or(-1)));
-                let stderr = String::from_utf8_lossy(&o.stderr);
-                for line in stderr.lines().take(5) {
-                    eprintln!("    {}", style::dim(line));
-                }
-            }
-            Err(e) => style::print_err(&format!("{cmd}: {e}")),
-        }
-    }
-}
