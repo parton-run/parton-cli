@@ -86,7 +86,7 @@ VERSION="\${PARTON_VERSION:-v${VERSION}}"
 INSTALLER
 
     cat >> "${RELEASE_DIR}/install.sh" << 'INSTALLER'
-BASE_URL="https://github.com/parton-run/parton-cli/releases/download"
+BASE_URL="https://cdn.parton.run"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"

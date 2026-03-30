@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: curl -fsSL https://parton.run/install.sh | sh
 
 VERSION="${PARTON_VERSION:-v0.2.1}"
-BASE_URL="https://github.com/parton-run/parton-cli/releases/download"
+BASE_URL="https://cdn.parton.run"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
