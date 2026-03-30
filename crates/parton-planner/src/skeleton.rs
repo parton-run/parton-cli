@@ -89,6 +89,11 @@ Use NAMED exports everywhere (export function X, export const Y). NEVER use defa
 
 PHASING: max 15 files per phase. Set done=false if more needed.
 
+MINIMIZE FILE COUNT: Use the FEWEST files possible. Combine related logic.
+BAD: separate types.ts, types.test.ts, storage.ts, storage.test.ts, useTodos.ts, useTodos.test.ts = 6 files for todo logic
+GOOD: types.ts (types), hooks/useTodos.ts (hook with storage), hooks/useTodos.test.ts (tests) = 3 files
+Don't create utility files unless they have 3+ consumers. Inline small helpers.
+
 ALL scripts must be non-interactive and terminate on their own (CI=true, no stdin).
 CRITICAL: if the test runner defaults to watch mode you MUST configure it to run once and exit.
 
