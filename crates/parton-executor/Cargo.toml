@@ -1,0 +1,17 @@
+[package]
+name = "parton-executor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+parton-core = { path = "../parton-core" }
+tokio.workspace = true
+async-trait.workspace = true
+futures-util = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

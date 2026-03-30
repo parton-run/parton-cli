@@ -1,0 +1,14 @@
+[package]
+name = "parton-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+toml = "0.8"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

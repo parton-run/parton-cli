@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/parton-core",
+    "crates/parton-providers",
+    "crates/parton-planner",
+    "crates/parton-executor",
+    "crates/parton-knowledge",
+    "crates/parton-graph",
+    "crates/parton-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/nicobailon/parton"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync"] }
+async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"

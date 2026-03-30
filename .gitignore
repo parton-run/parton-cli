@@ -1,0 +1,6 @@
+/target
+.env
+.parton/
+*.swp
+*.swo
+.DS_Store

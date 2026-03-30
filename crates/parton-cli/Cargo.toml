@@ -1,0 +1,25 @@
+[package]
+name = "parton"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "parton"
+path = "src/main.rs"
+
+[dependencies]
+parton-core = { path = "../parton-core" }
+parton-providers = { path = "../parton-providers" }
+parton-planner = { path = "../parton-planner" }
+parton-executor = { path = "../parton-executor" }
+parton-knowledge = { path = "../parton-knowledge" }
+parton-graph = { path = "../parton-graph" }
+clap.workspace = true
+anyhow.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json.workspace = true
+ratatui = "0.29"
+crossterm = "0.28"
+chrono = "0.4"
