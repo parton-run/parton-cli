@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn skeleton_prompt_has_key_rules() {
-        assert!(SKELETON_PROMPT.contains("ONE SHORT SENTENCE"));
+        assert!(SKELETON_PROMPT.contains("COMPLETE INTERFACE"));
         assert!(SKELETON_PROMPT.contains("must_export"));
         assert!(SKELETON_PROMPT.contains("COMPLETE and PRECISE"));
         assert!(SKELETON_PROMPT.contains("TESTING IS MANDATORY"));
@@ -267,8 +267,7 @@ mod tests {
 
     #[test]
     fn enrich_prompt_has_key_rules() {
-        assert!(ENRICH_PROMPT.contains("EXACT function signatures"));
-        assert!(ENRICH_PROMPT.contains("EXACT type/interface shapes"));
-        assert!(ENRICH_PROMPT.contains("Cross-file return types"));
+        assert!(ENRICH_PROMPT.contains("implementation details"));
+        assert!(ENRICH_PROMPT.contains("interface contract"));
     }
 }

@@ -144,6 +144,7 @@ mod tests {
             must_export: exports.into_iter().map(String::from).collect(),
             must_import_from: vec![],
             context_files: vec![],
+            scaffold_only: false,
         }
     }
 
@@ -190,6 +191,8 @@ mod tests {
             summary: "test".into(),
             conventions: vec![],
             files: vec![make_file_plan("src/app.ts", vec![])],
+            install_command: None,
+            check_commands: vec![],
             validation_commands: vec![],
             done: true,
             remaining_work: None,

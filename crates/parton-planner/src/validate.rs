@@ -110,6 +110,8 @@ mod tests {
             summary: "test".into(),
             conventions: vec![],
             files,
+            install_command: None,
+            check_commands: vec![],
             validation_commands: vec![],
             done: true,
             remaining_work: None,
@@ -124,12 +126,13 @@ mod tests {
             must_export: vec![],
             must_import_from: vec![],
             context_files: vec![],
+            scaffold_only: false,
         }
     }
 
     #[test]
     fn valid_plan_passes() {
-        let plan = make_plan(vec![simple_file("src/app.ts")]);
+        let plan = make_plan(vec![simple_file("src/app.ts"), simple_file("src/app.test.ts")]);
         let dir = tempfile::tempdir().unwrap();
         assert!(validate_plan(&plan, dir.path()).is_ok());
     }
@@ -176,7 +179,7 @@ mod tests {
             path: "src/a.ts".into(),
             symbols: vec!["Foo".into()],
         }];
-        let plan = make_plan(vec![simple_file("src/a.ts"), file_b]);
+        let plan = make_plan(vec![simple_file("src/a.ts"), file_b, simple_file("src/a.test.ts")]);
         let dir = tempfile::tempdir().unwrap();
         assert!(validate_plan(&plan, dir.path()).is_ok());
     }
@@ -192,7 +195,7 @@ mod tests {
             path: "src/existing.ts".into(),
             symbols: vec!["X".into()],
         }];
-        let plan = make_plan(vec![file]);
+        let plan = make_plan(vec![file, simple_file("src/new.test.ts")]);
         assert!(validate_plan(&plan, dir.path()).is_ok());
     }
 
@@ -203,7 +206,7 @@ mod tests {
             path: "src/missing.ts".into(),
             symbols: vec!["Foo".into()],
         }];
-        let plan = make_plan(vec![file]);
+        let plan = make_plan(vec![file, simple_file("src/app.test.ts")]);
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(
             validate_plan(&plan, dir.path()),

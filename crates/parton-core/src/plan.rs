@@ -124,6 +124,7 @@ mod tests {
                 symbols: vec!["Todo".into()],
             }],
             context_files: vec!["tsconfig.json".into()],
+            scaffold_only: false,
         };
         let json = serde_json::to_string(&plan).unwrap();
         let parsed: FilePlan = serde_json::from_str(&json).unwrap();
