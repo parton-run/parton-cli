@@ -20,7 +20,8 @@ THE JSON SCHEMA:
       "must_import_from": [
         {"path": "string — EXACT path matching another file's path field", "symbols": ["string"]}
       ],
-      "context_files": ["string — existing files the executor needs"]
+      "context_files": ["string — existing files the executor needs"],
+      "scaffold_only": true or false
     }
   ],
   "install_command": "string or null — shell command to install dependencies (e.g. 'npm install', 'cargo fetch', 'pip install -r requirements.txt')",
@@ -41,6 +42,18 @@ Example goals:
 - "Export type Todo = { id: string, text: string, completed: boolean, createdAt: number }"
 
 The goal is the CONTRACT between parallel agents. If you write onToggle in TodoItem but toggleTodo in App, the build breaks. BE PRECISE.
+
+SCAFFOLD_ONLY FLAG:
+Set "scaffold_only": true for files where the scaffold IS the final version:
+- Config files (package.json, tsconfig.json, vite.config.*, tailwind.config.*, etc.)
+- CSS files, HTML entry points, setup files
+- Any file that doesn't contain application logic
+
+Set "scaffold_only": false for files that need full implementation:
+- Source files with business logic, components, hooks, utilities
+- Test files that need real test cases
+
+Files with scaffold_only=true will NOT go through the final implementation step.
 
 CRITICAL — INTERFACE PRECISION:
 When file A passes data to file B (e.g. component props, function parameters), the skeleton goal MUST specify the EXACT prop/parameter names. Example:
@@ -131,8 +144,19 @@ pub async fn enrich_plan(
         )
     };
 
-    let futures: FuturesUnordered<_> = plan
+    // Only enrich files that need final execution — skip scaffold_only files.
+    let files_to_enrich: Vec<&parton_core::FilePlan> = plan
         .files
+        .iter()
+        .filter(|f| !f.scaffold_only)
+        .collect();
+
+    // Immediately mark scaffold_only files as enriched.
+    for file in plan.files.iter().filter(|f| f.scaffold_only) {
+        on_enriched(&file.path);
+    }
+
+    let futures: FuturesUnordered<_> = files_to_enrich
         .iter()
         .map(|file| enrich_single_file(file, plan, &conventions_text, provider))
         .collect();

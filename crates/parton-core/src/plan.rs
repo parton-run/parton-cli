@@ -41,6 +41,10 @@ pub struct FilePlan {
     /// Read-only files the executor needs for context.
     #[serde(default)]
     pub context_files: Vec<String>,
+    /// If true, scaffold output is final — skip enrichment and final execution.
+    /// Use for config files, CSS, HTML, and other static files.
+    #[serde(default)]
+    pub scaffold_only: bool,
 }
 
 /// A complete execution plan for one phase of work.
