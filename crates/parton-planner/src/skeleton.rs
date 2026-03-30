@@ -30,14 +30,27 @@ THE JSON SCHEMA:
   "remaining_work": "string or null"
 }
 
-THIS IS A SKELETON — the "goal" field should be ONE SHORT SENTENCE describing what the file does.
-Do NOT include signatures, types, or implementation details in goal. Those come in a separate enrichment step.
+THIS IS A SKELETON — the "goal" field must define the file's COMPLETE INTERFACE in compact form.
+Include: exact function/method names, exact prop names, exact callback names, exact return type shapes.
+Do NOT include implementation details — just the interface contract.
+
+Example goals:
+- "Export function useTodos(): { todos: Todo[], addTodo(text: string): void, toggleTodo(id: string): void, deleteTodo(id: string): void, filter: FilterStatus, setFilter(f: FilterStatus): void }"
+- "Export function TodoItem({ todo, onToggle, onDelete }: { todo: Todo, onToggle(id: string): void, onDelete(id: string): void }): JSX.Element — renders checkbox, text, delete button"
+- "Export function App(): JSX.Element — uses useTodos(), renders TodoInput({ onAdd: addTodo }), TodoList({ todos, onToggle: toggleTodo, onDelete: deleteTodo }), FilterBar({ filter, onFilterChange: setFilter })"
+- "Export type Todo = { id: string, text: string, completed: boolean, createdAt: number }"
+
+The goal is the CONTRACT between parallel agents. If you write onToggle in TodoItem but toggleTodo in App, the build breaks. BE PRECISE.
 
 CRITICAL — INTERFACE PRECISION:
 When file A passes data to file B (e.g. component props, function parameters), the skeleton goal MUST specify the EXACT prop/parameter names. Example:
 - BAD goal: "TodoItem component that can toggle and delete"
 - GOOD goal: "TodoItem({ todo, onToggle, onDelete }: Props) — receives todo object, onToggle callback, onDelete callback"
 If you don't specify exact names, parallel agents will use different names and the code won't compile.
+
+EXISTING CODE: If the Project Context shows existing files, do NOT recreate them.
+Use context_files to reference existing files the executor needs to see.
+If an existing file already exports a symbol you need, import it — don't create a duplicate.
 
 ALSO — must_export and must_import_from MUST be COMPLETE and PRECISE:
 - Every exported symbol name must be exact
@@ -64,23 +77,20 @@ Example: for vitest the test script must be 'vitest run' NOT 'vitest'. For jest:
 Return valid JSON only."#;
 
 /// System prompt for enriching a single file's goal.
-const ENRICH_PROMPT: &str = r#"You are a code specification writer. Given a file's skeleton (path, exports, imports), write a PRECISE goal description.
+const ENRICH_PROMPT: &str = r#"You are a code specification writer. Given a file's skeleton goal (which already defines the interface contract), EXPAND it with implementation details.
 
-The goal must include:
-- EXACT function signatures with parameter types and return types
-- EXACT type/interface shapes with all fields
-- EXACT behavior descriptions for each exported symbol
-- Cross-file return types: if this function returns data used by other files, state the exact shape
+The skeleton goal already has: exact function names, prop names, return types.
+You must ADD:
+- Behavior details: what each function actually does, edge cases to handle
+- State management: what state is kept, how it's updated
+- UI details: what elements to render, layout, interactions
+- Test specifics: what scenarios to test, expected inputs and outputs
+- Error handling: what can go wrong and how to handle it
 
-Your response must be ONLY the goal text — a plain string. No JSON, no markdown, no code blocks. Just a precise natural language description of what the file must contain.
+Your response must be ONLY the expanded goal text — a plain string. No JSON, no markdown, no code blocks.
 
-RULES:
-- Include EXACT TypeScript/Rust/Go/Python signatures as appropriate
-- For types: list ALL fields with their types
-- For functions: list ALL parameters, return type, and key behavior
-- For components: list props interface and rendering behavior
-- For hooks: list return value shape and state management approach
-- For test files: list which functions/components to test and key test cases"#;
+CRITICAL: Do NOT change any function names, prop names, or type names from the skeleton goal.
+The skeleton goal is the interface contract. You are adding implementation details, not changing the interface."#;
 
 /// Generate a skeleton plan (contracts only, minimal goals).
 pub async fn generate_skeleton(
