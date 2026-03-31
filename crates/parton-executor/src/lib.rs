@@ -22,5 +22,6 @@ pub use runner::{
     execute, execute_streaming, execute_streaming_with_graph, scaffold_streaming,
     scaffold_streaming_with_graph, ExecMode, ScaffoldResult,
 };
+pub use scaffold::strip_markdown_fences_public;
 pub use structure_check::{run_check, run_install, CheckResult};
 pub use writer::write_results;

@@ -1,6 +1,7 @@
 //! Query API for extracting targeted context from the code graph.
 
 pub mod context;
+pub mod summary;
 
 use crate::types::CodeGraph;
 

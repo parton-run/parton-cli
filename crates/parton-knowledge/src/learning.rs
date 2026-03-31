@@ -16,7 +16,7 @@ pub async fn extract_and_store(
     provider: &dyn ModelProvider,
     store: &dyn KnowledgeStore,
 ) -> Result<Vec<Entry>, ProviderError> {
-    let response = provider.send(LEARNING_PROMPT, run_summary, false).await?;
+    let response = provider.send(LEARNING_PROMPT, run_summary, true).await?;
     let learnings = parse_learnings(&response.content);
 
     for entry in &learnings {

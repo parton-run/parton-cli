@@ -118,7 +118,7 @@ pub struct FileNode {
 }
 
 /// In-memory code graph.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CodeGraph {
     /// Files indexed by relative path.
     pub files: HashMap<String, FileNode>,

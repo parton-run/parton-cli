@@ -9,20 +9,23 @@ use parton_core::{ClarificationResult, ModelProvider, ProviderError, Question, Q
 pub async fn generate_questions(
     prompt: &str,
     is_greenfield: bool,
+    graph_summary: &str,
     provider: &dyn ModelProvider,
 ) -> Result<ClarificationResult, ProviderError> {
     let system = build_system_prompt(is_greenfield);
+    let repo_ctx = if is_greenfield {
+        "New project with no existing code.".to_string()
+    } else if graph_summary.is_empty() {
+        "Existing project with code already in place.".to_string()
+    } else {
+        format!("Existing project with code already in place.\n\n{graph_summary}")
+    };
     let user = format!(
-        "Repository context: {ctx}\n\nUser's request:\n{prompt}\n\n\
+        "Repository context: {repo_ctx}\n\nUser's request:\n{prompt}\n\n\
          Generate clarification questions to fill in the gaps needed for implementation planning.",
-        ctx = if is_greenfield {
-            "New project with no existing code."
-        } else {
-            "Existing project with code already in place."
-        },
     );
 
-    let response = provider.send(&system, &user, false).await?;
+    let response = provider.send(&system, &user, true).await?;
     let mut result = parse_response(&response.content)?;
     add_other_option(&mut result.questions);
     Ok(result)
@@ -40,9 +43,16 @@ fn build_system_prompt(is_greenfield: bool) -> String {
     } else {
         r#"This is an EXISTING project with code already in place. Prioritize questions about:
 1. Scope of the change (which parts of the codebase are affected)
-2. Integration targets (which existing modules/APIs to connect with)
-3. Expected behavior (inputs, outputs, edge cases)
-4. Constraints (backwards compatibility, performance requirements, etc.)"#
+2. Expected behavior (inputs, outputs, edge cases)
+3. Constraints (backwards compatibility, performance requirements, etc.)
+4. Ambiguous BUSINESS requirements that cannot be inferred from code
+
+NEVER ask about things visible in the Existing Code section:
+- How auth/admin access works — READ the key file snippets
+- What database/ORM is used — READ the schema files
+- What framework/libraries are used — READ the imports
+- How existing components work — READ their exports and signatures
+If the answer is in the code, state it as an assumption, don't ask."#
     };
 
     format!(

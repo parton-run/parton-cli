@@ -26,47 +26,47 @@ use std::path::Path;
 
 use parton_core::FilePlan;
 
-/// Build graph context strings for all files in a plan.
+/// Scan an entire project and build the code graph.
 ///
-/// Scans existing project files with tree-sitter, creates stub
-/// nodes for planned files using their `must_import_from` data,
-/// then generates targeted context for each file.
-pub async fn build_graph_contexts(
-    plan_files: &[FilePlan],
-    project_root: &Path,
-) -> Result<HashMap<String, String>, GraphError> {
-    // Collect all existing files worth scanning (imports + context + edits).
-    let scannable: Vec<String> = plan_files
-        .iter()
-        .flat_map(|f| {
-            let mut paths: Vec<String> =
-                f.must_import_from.iter().map(|i| i.path.clone()).collect();
-            paths.extend(f.context_files.iter().cloned());
-            if f.action == parton_core::FileAction::Edit {
-                paths.push(f.path.clone());
-            }
-            paths
-        })
-        .filter(|p| project_root.join(p).exists())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
+/// Walks the project tree, parses all supported source files with
+/// tree-sitter, and returns the in-memory graph. This should run
+/// once at the start of the pipeline.
+pub async fn scan_project(project_root: &Path) -> Result<CodeGraph, GraphError> {
+    let source_files = scan::walker::collect_source_files(project_root);
 
-    if scannable.is_empty() {
-        return Ok(HashMap::new());
+    if source_files.is_empty() {
+        return Ok(CodeGraph::new());
     }
 
     let mut store = GrammarStore::with_default_cache()?;
-    let file_nodes = scan::scan_files(&scannable, &mut store, project_root).await;
+    let file_nodes = scan::scan_files(&source_files, &mut store, project_root).await;
 
-    let mut code_graph = CodeGraph::new();
+    let mut graph = CodeGraph::new();
     for node in file_nodes {
-        code_graph.add_file(node);
+        graph.add_file(node);
     }
 
-    // Create stub nodes for planned files so the graph knows their imports.
+    Ok(graph)
+}
+
+/// Build a high-level summary of the graph for the planner/clarifier.
+///
+/// Returns a compact markdown overview of existing modules, their
+/// exports, import patterns, and key file snippets.
+pub fn build_graph_summary(graph: &CodeGraph, project_root: &Path) -> String {
+    query::summary::build_summary(graph, project_root)
+}
+
+/// Build per-file context strings for executor prompts.
+///
+/// Creates stub nodes for planned files using their `must_import_from`
+/// data, then generates targeted context for each file.
+pub fn build_file_contexts(graph: &CodeGraph, plan_files: &[FilePlan]) -> HashMap<String, String> {
+    // Clone graph so we can add stub nodes for planned files.
+    let mut exec_graph = graph.clone();
+
     for file in plan_files {
-        if code_graph.get_file(&file.path).is_some() {
+        if exec_graph.get_file(&file.path).is_some() {
             continue;
         }
         let imports: Vec<ImportEdge> = file
@@ -78,7 +78,7 @@ pub async fn build_graph_contexts(
             })
             .collect();
         if !imports.is_empty() {
-            code_graph.add_file(FileNode {
+            exec_graph.add_file(FileNode {
                 path: file.path.clone(),
                 language: detect_language(&file.path),
                 symbols: vec![],
@@ -89,13 +89,13 @@ pub async fn build_graph_contexts(
 
     let mut contexts = HashMap::new();
     for file in plan_files {
-        let ctx = context_for_file(&code_graph, &file.path);
+        let ctx = context_for_file(&exec_graph, &file.path);
         if !ctx.is_empty() {
             contexts.insert(file.path.clone(), ctx);
         }
     }
 
-    Ok(contexts)
+    contexts
 }
 
 #[cfg(test)]
@@ -104,9 +104,15 @@ mod tests {
 
     #[test]
     fn public_api_exports() {
-        // Verify key types are accessible.
         let _graph = CodeGraph::new();
         let _lang = Language::TypeScript;
         let _kind = SymbolKind::Function;
+    }
+
+    #[test]
+    fn build_summary_on_empty_graph() {
+        let dir = tempfile::tempdir().unwrap();
+        let graph = CodeGraph::new();
+        assert!(build_graph_summary(&graph, dir.path()).is_empty());
     }
 }

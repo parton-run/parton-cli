@@ -6,7 +6,6 @@ use std::time::Instant;
 
 use parton_core::{FilePlan, FileResult, ModelProvider, RunPlan};
 
-use crate::output::clean_output;
 use crate::prompt::build_file_prompt_with_graph;
 use crate::scaffold;
 
@@ -26,9 +25,9 @@ pub enum ExecMode {
 pub struct ScaffoldResult {
     /// File path.
     pub path: String,
-    /// Enriched goal (from ===GOAL_START=== / ===GOAL_END===).
+    /// Enriched goal from the scaffold JSON response.
     pub enriched_goal: String,
-    /// Scaffold code (from ===FILE_START=== / ===FILE_END===).
+    /// Scaffold code from the scaffold JSON response.
     pub code: String,
     /// Whether execution succeeded.
     pub success: bool,
@@ -234,9 +233,10 @@ async fn execute_file(
 
     match provider.send(system_prompt, &prompt, false).await {
         Ok(response) => {
-            let content = clean_output(&response.content);
             let elapsed_ms = start.elapsed().as_millis() as u64;
             let tokens = response.prompt_tokens + response.completion_tokens;
+
+            let content = crate::output::clean_output(&response.content);
             let success = !content.is_empty();
 
             FileResult {
@@ -336,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn execute_success() {
         let provider = MockProvider {
-            response: "===FILE_START===\nconst x = 1;\n===FILE_END===".into(),
+            response: "===CODE===\nconst x = 1;\n===END===".into(),
         };
         let dir = tempfile::tempdir().unwrap();
         let results = execute(&test_plan(), &provider, dir.path(), ExecMode::Full).await;

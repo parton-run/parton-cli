@@ -55,12 +55,12 @@ pub trait ModelProvider: Send + Sync {
     ///
     /// - `system`: system-level instructions or context
     /// - `prompt`: the user prompt
-    /// - `stream`: if true, print chunks to stdout as they arrive
+    /// - `json_mode`: if true, force the model to return valid JSON
     async fn send(
         &self,
         system: &str,
         prompt: &str,
-        stream: bool,
+        json_mode: bool,
     ) -> Result<ModelResponse, ProviderError>;
 }
 

@@ -60,10 +60,18 @@ impl ModelProvider for OpenAiProvider {
         &self,
         system: &str,
         prompt: &str,
-        _stream: bool,
+        json_mode: bool,
     ) -> Result<ModelResponse, ProviderError> {
         let url = format!("{}/v1/chat/completions", self.config.base_url);
         let use_new_param = uses_max_completion_tokens(&self.config.model);
+
+        let response_format = if json_mode {
+            Some(ResponseFormat {
+                r#type: "json_object",
+            })
+        } else {
+            None
+        };
 
         let body = Request {
             model: &self.config.model,
@@ -77,6 +85,7 @@ impl ModelProvider for OpenAiProvider {
             } else {
                 None
             },
+            response_format,
             messages: vec![
                 Message {
                     role: "system",
@@ -162,7 +171,14 @@ struct Request<'a> {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat<'a>>,
     messages: Vec<Message<'a>>,
+}
+
+#[derive(Serialize)]
+struct ResponseFormat<'a> {
+    r#type: &'a str,
 }
 
 #[derive(Serialize)]
@@ -240,6 +256,7 @@ mod tests {
             model: "gpt-4o",
             max_tokens: Some(4096),
             max_completion_tokens: None,
+            response_format: None,
             messages: vec![Message {
                 role: "user",
                 content: "hi",
@@ -248,21 +265,24 @@ mod tests {
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["max_tokens"], 4096);
         assert!(json.get("max_completion_tokens").is_none());
+        assert!(json.get("response_format").is_none());
     }
 
     #[test]
-    fn request_serialization_new_model() {
+    fn request_serialization_json_mode() {
         let req = Request {
-            model: "gpt-5.4",
-            max_tokens: None,
-            max_completion_tokens: Some(4096),
+            model: "gpt-4o",
+            max_tokens: Some(4096),
+            max_completion_tokens: None,
+            response_format: Some(ResponseFormat {
+                r#type: "json_object",
+            }),
             messages: vec![Message {
                 role: "user",
                 content: "hi",
             }],
         };
         let json = serde_json::to_value(&req).unwrap();
-        assert!(json.get("max_tokens").is_none());
-        assert_eq!(json["max_completion_tokens"], 4096);
+        assert_eq!(json["response_format"]["type"], "json_object");
     }
 }

@@ -1,11 +1,12 @@
-//! The `parton run` command — 6-step pipeline.
+//! The `parton run` command — pipeline.
 //!
-//! 1. Skeleton plan (contracts)
-//! 2. Enrich plan (detailed goals, parallel)
-//! 3. Scaffold execution (minimal stubs, parallel)
-//! 4. Structure check (compile/type-check + auto-fix)
-//! 5. Final execution (full implementation, parallel)
-//! 6. Validation (tests + build)
+//! 0. Code graph (scan existing project)
+//! 1. Clarification (with graph context)
+//! 2. Skeleton plan (with graph context)
+//! 3. Scaffold execution (with per-file graph context)
+//! 4. Structure check + auto-fix
+//! 5. Final execution (with per-file graph context)
+//! 6. Validation + auto-fix
 
 use std::path::Path;
 use std::time::Instant;
@@ -33,15 +34,51 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     parton_knowledge::auto_init(&knowledge_store, project_root);
 
     let rt = tokio::runtime::Runtime::new().context("failed to create async runtime")?;
-
-    // ── Step 0: Clarification ──
-    style::print_header("Analyzing intent");
     let is_greenfield = is_greenfield_project(project_root);
+
+    // ── Step 0: Code graph ──
+    let (code_graph, graph_summary) = if is_greenfield {
+        (parton_graph::CodeGraph::new(), String::new())
+    } else {
+        style::print_header("Code graph");
+        let spin = spinner::Spinner::start("Scanning project...");
+        let graph = rt
+            .block_on(async { parton_graph::scan_project(project_root).await })
+            .unwrap_or_else(|e| {
+                tracing::warn!("graph scan failed: {e}");
+                parton_graph::CodeGraph::new()
+            });
+        spin.stop();
+        let summary = parton_graph::build_graph_summary(&graph, project_root);
+        if graph.file_count() == 0 {
+            style::print_ok("No source files found");
+        } else {
+            style::print_ok(&format!(
+                "{} files scanned, {} with exports",
+                graph.file_count(),
+                graph
+                    .files
+                    .values()
+                    .filter(|f| f.symbols.iter().any(|s| s.exported))
+                    .count()
+            ));
+        }
+        (graph, summary)
+    };
+
+    // ── Step 1: Clarification ──
+    style::print_header("Analyzing intent");
 
     let spin = spinner::Spinner::start("Analyzing...");
     let clarification = rt
         .block_on(async {
-            parton_planner::generate_questions(prompt, is_greenfield, &*planning_provider).await
+            parton_planner::generate_questions(
+                prompt,
+                is_greenfield,
+                &graph_summary,
+                &*planning_provider,
+            )
+            .await
         })
         .unwrap_or_else(|e| {
             tracing::warn!("Clarification failed: {e}");
@@ -62,10 +99,16 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         enriched_prompt = format!("{knowledge_ctx}\n\n{enriched_prompt}");
     }
 
+    // Combine project context with graph summary for the planner.
     let project_ctx = parton_planner::build_project_context(project_root);
+    let full_context = if graph_summary.is_empty() {
+        project_ctx
+    } else {
+        format!("{project_ctx}\n\n{graph_summary}")
+    };
 
-    // ── Step 1: Skeleton plan (with retry on validation failure) ──
-    style::print_header("Step 1 — Plan");
+    // ── Step 2: Skeleton plan ──
+    style::print_header("Step 2 — Plan");
     let plan = {
         let mut last_error = String::new();
         let mut result = None;
@@ -83,13 +126,22 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             } else {
                 "Retrying..."
             });
-            let skel = rt
+            let mut skel = rt
                 .block_on(async {
-                    parton_planner::generate_skeleton(&prompt, &project_ctx, &*planning_provider)
+                    parton_planner::generate_skeleton(&prompt, &full_context, &*planning_provider)
                         .await
                 })
                 .map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
             spin.stop();
+
+            // Auto-fix: if planner says Create but file exists, switch to Edit.
+            for file in &mut skel.files {
+                if file.action == parton_core::FileAction::Create
+                    && project_root.join(&file.path).exists()
+                {
+                    file.action = parton_core::FileAction::Edit;
+                }
+            }
 
             match parton_planner::validate_plan(&skel, project_root) {
                 Ok(()) => {
@@ -122,7 +174,7 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                     .block_on(async {
                         parton_planner::generate_skeleton(
                             &replan_prompt,
-                            &project_ctx,
+                            &full_context,
                             &*planning_provider,
                         )
                         .await
@@ -144,39 +196,11 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         return Ok(());
     }
 
-    // ── Step 1.5: Build code graph ──
-    let has_scannable = plan.files.iter().any(|f| {
-        f.action == parton_core::FileAction::Edit
-            || f.must_import_from
-                .iter()
-                .any(|i| project_root.join(&i.path).exists())
-            || f.context_files
-                .iter()
-                .any(|c| project_root.join(c).exists())
-    });
+    // ── Build per-file graph contexts for executors ──
+    let graph_contexts = parton_graph::build_file_contexts(&code_graph, &plan.files);
 
-    let graph_contexts = if !has_scannable {
-        std::collections::HashMap::new()
-    } else {
-        style::print_header("Code graph");
-        let spin = spinner::Spinner::start("Scanning project...");
-        let ctx = rt
-            .block_on(async { parton_graph::build_graph_contexts(&plan.files, project_root).await })
-            .unwrap_or_else(|e| {
-                tracing::warn!("graph building failed: {e}");
-                std::collections::HashMap::new()
-            });
-        spin.stop();
-        if ctx.is_empty() {
-            style::print_ok("No relevant symbols found");
-        } else {
-            style::print_ok(&format!("{} files enriched with signatures", ctx.len()));
-        }
-        ctx
-    };
-
-    // ── Step 2: Scaffold+Enrich (parallel, combined) ──
-    style::print_header("Step 2 — Scaffold");
+    // ── Step 3: Scaffold+Enrich (parallel, combined) ──
+    style::print_header("Step 3 — Scaffold");
     let exec_labels: Vec<String> = plan.files.iter().map(|f| f.path.clone()).collect();
     let scaffold_prog = progress::ParallelProgress::new(&exec_labels);
     let _ticker = scaffold_prog.start_ticker();
@@ -205,7 +229,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             let _ = std::fs::write(&full_path, &sr.code);
             scaffold_written.push(sr.path.clone());
         }
-        // Update enriched goal if provided.
         if !sr.enriched_goal.is_empty() {
             if let Some(file) = enriched_plan.files.iter_mut().find(|f| f.path == sr.path) {
                 file.goal = sr.enriched_goal.clone();
@@ -243,7 +266,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             eprintln!("    {}", style::dim(line));
         }
 
-        // Re-scaffold ONLY config files that have errors.
         let config_fix_plan = {
             let mut p = enriched_plan.clone();
             p.files.retain(|f| {
@@ -275,7 +297,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                 fix_results.iter().filter(|r| r.success).cloned().collect();
             let _ = parton_executor::write_results(&fix_ok, project_root);
 
-            // Re-check.
             let recheck = parton_executor::run_check(&plan.check_commands, project_root);
             if recheck.passed {
                 style::print_ok("Config fix successful — structure compiles");
@@ -285,12 +306,12 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         check.errors
     };
 
-    // ── Step 3: Final execution (only logic files) ──
+    // ── Step 4: Final execution (only logic files) ──
     let mut final_plan = enriched_plan.clone();
     final_plan.files.retain(needs_final_execution);
     let skipped = enriched_plan.files.len() - final_plan.files.len();
 
-    style::print_header("Step 3 — Final Execution");
+    style::print_header("Step 4 — Final Execution");
     if skipped > 0 {
         style::print_ok(&format!("{skipped} files kept from scaffold"));
     }
@@ -313,7 +334,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     });
     drop(_ticker);
 
-    // Compliance check (only on files that went through final execution).
     let issues = parton_executor::check_all(&final_plan, &final_results);
     if issues.is_empty() {
         style::print_ok(&format!(
@@ -327,7 +347,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         }
     }
 
-    // Write final files to disk (only logic files — config already written by scaffold).
     let final_ok: Vec<FileResult> = final_results
         .iter()
         .filter(|r| r.success)
@@ -342,9 +361,9 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         written_final.len()
     ));
 
-    // ── Step 6: Validation (with auto-fix retry) ──
+    // ── Step 5: Validation (with auto-fix retry) ──
     if !plan.validation_commands.is_empty() {
-        style::print_header("Step 6 — Validation");
+        style::print_header("Step 5 — Validation");
         let val_result = run_validation_check(&plan.validation_commands, project_root);
 
         if !val_result.passed {
@@ -391,7 +410,6 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let total_tokens = scaffold_tokens + final_tokens;
     let failed = final_results.iter().filter(|r| !r.success).count();
 
-    // Extract learnings.
     let summary = format!(
         "Prompt: {prompt}\nFiles: {}\nFailed: {failed}",
         written_final.join(", "),

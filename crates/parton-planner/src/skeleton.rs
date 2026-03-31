@@ -1,6 +1,14 @@
 //! Two-phase planning: skeleton (contracts) → enrich (detailed goals) in parallel.
 
+use serde::Deserialize;
+
 use parton_core::{FilePlan, ModelProvider, ProviderError, RunPlan};
+
+/// JSON response for goal enrichment.
+#[derive(Deserialize)]
+struct EnrichResponse {
+    goal: String,
+}
 
 /// System prompt for skeleton planning — full contracts, minimal goals.
 const SKELETON_PROMPT: &str = r#"You are a software architect producing a JSON execution plan SKELETON.
@@ -72,9 +80,13 @@ If main.tsx imports from "./components/App", then src/components/App.tsx MUST be
 If App.tsx renders TodoItem, then the file containing TodoItem MUST be in the plan.
 Missing files = broken imports = build failure. Trace ALL imports and ensure every target exists.
 
-EXISTING CODE: If the Project Context shows existing files, do NOT recreate them.
-Use context_files to reference existing files the executor needs to see.
-If an existing file already exports a symbol you need, import it — don't create a duplicate.
+EXISTING CODE — CRITICAL:
+- If a file already exists on disk and needs changes, use action: "Edit", NOT "Create".
+- "Create" means the file does not exist yet. "Edit" means it exists and you're modifying it.
+- If you need to add a nav item to an existing sidebar component, that's an EDIT.
+- If you need to import from an existing file, add it to context_files — don't recreate it.
+- If an existing file already exports a symbol you need, import it — don't create a duplicate.
+- The Existing Code section in Project Context lists files that are ON DISK. Do not Create them.
 
 ALSO — must_export and must_import_from MUST be COMPLETE and PRECISE:
 - Every exported symbol name must be exact
@@ -123,7 +135,8 @@ You must ADD:
 - Test specifics: what scenarios to test, expected inputs and outputs
 - Error handling: what can go wrong and how to handle it
 
-Your response must be ONLY the expanded goal text — a plain string. No JSON, no markdown, no code blocks.
+You MUST respond with ONLY a JSON object:
+{"goal": "the expanded goal text here"}
 
 CRITICAL: Do NOT change any function names, prop names, or type names from the skeleton goal.
 The skeleton goal is the interface contract. You are adding implementation details, not changing the interface."#;
@@ -140,7 +153,7 @@ pub async fn generate_skeleton(
         format!("{SKELETON_PROMPT}\n\n# Project Context\n{project_context}")
     };
 
-    let response = provider.send(&system, prompt, false).await?;
+    let response = provider.send(&system, prompt, true).await?;
 
     crate::parse_plan(&response.content)
         .map_err(|e| ProviderError::Other(format!("failed to parse skeleton plan: {e}")))
@@ -258,9 +271,12 @@ async fn enrich_single_file(
     }
 
     let user_prompt = context_parts.join("\n\n");
-    let response = provider.send(ENRICH_PROMPT, &user_prompt, false).await?;
+    let response = provider.send(ENRICH_PROMPT, &user_prompt, true).await?;
 
-    Ok((file.path.clone(), response.content.trim().to_string()))
+    let enriched: EnrichResponse = serde_json::from_str(response.content.trim())
+        .map_err(|e| ProviderError::Other(format!("failed to parse enrich JSON: {e}")))?;
+
+    Ok((file.path.clone(), enriched.goal))
 }
 
 #[cfg(test)]
@@ -279,5 +295,6 @@ mod tests {
     fn enrich_prompt_has_key_rules() {
         assert!(ENRICH_PROMPT.contains("implementation details"));
         assert!(ENRICH_PROMPT.contains("interface contract"));
+        assert!(ENRICH_PROMPT.contains(r#"{"goal":"#));
     }
 }

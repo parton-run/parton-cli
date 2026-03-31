@@ -1,35 +1,55 @@
 //! Output parsing — extract file content from LLM responses.
 
-/// Extract file content from between `===FILE_START===` and `===FILE_END===` markers.
+use crate::scaffold::strip_markdown_fences_public;
+
+/// Extract file content from between code markers.
 ///
-/// Returns an empty string if markers are missing (invalid output).
+/// Supports both `===CODE===`/`===END===` (new) and
+/// `===FILE_START===`/`===FILE_END===` (legacy) markers.
+/// Strips markdown fences that LLMs sometimes add.
+/// Returns an empty string if no markers found.
 pub fn clean_output(content: &str) -> String {
     let trimmed = content.trim();
 
-    if let Some(start_idx) = trimmed.find("===FILE_START===") {
-        let after = &trimmed[start_idx + "===FILE_START===".len()..];
-        let code_start = after.strip_prefix('\n').unwrap_or(after);
-
-        if let Some(end_idx) = code_start.find("===FILE_END===") {
-            let code = code_start[..end_idx].trim_end();
-            return if code.is_empty() {
-                String::new()
-            } else {
-                code.to_string()
-            };
-        }
-
-        // Start marker but no end — take everything after start.
-        let code = code_start.trim_end();
-        return if code.is_empty() {
-            String::new()
-        } else {
-            code.to_string()
-        };
+    // Try new markers first.
+    if let Some(code) = extract_between_markers(trimmed, "===CODE===", "===END===") {
+        return strip_markdown_fences_public(&code);
     }
 
-    // No markers — invalid output.
+    // Fallback to legacy markers.
+    if let Some(code) = extract_between_markers(trimmed, "===FILE_START===", "===FILE_END===") {
+        return strip_markdown_fences_public(&code);
+    }
+
+    // Try JSON fallback — some responses may still come as {"code": "..."}.
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(code) = val.get("code").and_then(|c| c.as_str()) {
+            if !code.is_empty() {
+                return strip_markdown_fences_public(code);
+            }
+        }
+    }
+
     String::new()
+}
+
+/// Extract text between start and end markers.
+fn extract_between_markers(content: &str, start: &str, end: &str) -> Option<String> {
+    let start_idx = content.find(start)?;
+    let after = &content[start_idx + start.len()..];
+    let code_start = after.strip_prefix('\n').unwrap_or(after);
+
+    let code = if let Some(end_idx) = code_start.find(end) {
+        code_start[..end_idx].trim_end()
+    } else {
+        code_start.trim_end()
+    };
+
+    if code.is_empty() {
+        None
+    } else {
+        Some(code.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -37,15 +57,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extract_between_markers() {
+    fn extract_new_markers() {
+        let input = "===CODE===\nconst x = 1;\n===END===";
+        assert_eq!(clean_output(input), "const x = 1;");
+    }
+
+    #[test]
+    fn extract_legacy_markers() {
         let input = "===FILE_START===\nconst x = 1;\n===FILE_END===";
         assert_eq!(clean_output(input), "const x = 1;");
     }
 
     #[test]
-    fn extract_multiline() {
-        let input = "===FILE_START===\nline 1\nline 2\nline 3\n===FILE_END===";
-        assert_eq!(clean_output(input), "line 1\nline 2\nline 3");
+    fn extract_json_fallback() {
+        let input = r#"{"code": "const x = 1;"}"#;
+        assert_eq!(clean_output(input), "const x = 1;");
     }
 
     #[test]
@@ -54,25 +80,26 @@ mod tests {
     }
 
     #[test]
-    fn empty_between_markers_returns_empty() {
-        assert_eq!(clean_output("===FILE_START===\n===FILE_END==="), "");
+    fn strips_markdown_fences() {
+        let input = "===CODE===\n```typescript\nconst x = 1;\n```\n===END===";
+        assert_eq!(clean_output(input), "const x = 1;");
     }
 
     #[test]
-    fn no_end_marker_takes_rest() {
-        let input = "===FILE_START===\nconst x = 1;\nconst y = 2;";
-        assert_eq!(clean_output(input), "const x = 1;\nconst y = 2;");
+    fn multiline_code() {
+        let input = "===CODE===\nline 1\nline 2\nline 3\n===END===";
+        assert_eq!(clean_output(input), "line 1\nline 2\nline 3");
     }
 
     #[test]
     fn surrounding_text_ignored() {
-        let input = "Here's the file:\n===FILE_START===\ncode\n===FILE_END===\nDone!";
+        let input = "Here's the file:\n===CODE===\ncode\n===END===\nDone!";
         assert_eq!(clean_output(input), "code");
     }
 
     #[test]
-    fn whitespace_trimmed() {
-        let input = "  \n===FILE_START===\ncode\n===FILE_END===  \n";
-        assert_eq!(clean_output(input), "code");
+    fn no_end_marker_takes_rest() {
+        let input = "===CODE===\nconst x = 1;\nconst y = 2;";
+        assert_eq!(clean_output(input), "const x = 1;\nconst y = 2;");
     }
 }

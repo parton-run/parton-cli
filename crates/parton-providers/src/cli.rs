@@ -29,7 +29,7 @@ impl ModelProvider for CliProvider {
         &self,
         system: &str,
         prompt: &str,
-        _stream: bool,
+        _json_mode: bool,
     ) -> Result<ModelResponse, ProviderError> {
         let command = self.command.clone();
         let model = self.model.clone();

@@ -35,7 +35,7 @@ impl ModelProvider for OllamaProvider {
         &self,
         system: &str,
         prompt: &str,
-        _stream: bool,
+        json_mode: bool,
     ) -> Result<ModelResponse, ProviderError> {
         let full_prompt = if system.is_empty() {
             prompt.to_string()
@@ -46,10 +46,13 @@ impl ModelProvider for OllamaProvider {
         let client = reqwest::Client::new();
         let url = format!("{}/api/generate", self.base_url);
 
+        let format = if json_mode { Some("json") } else { None };
+
         let request = GenerateRequest {
             model: &self.model,
             prompt: &full_prompt,
             stream: false,
+            format,
         };
 
         let resp = client.post(&url).json(&request).send().await.map_err(|e| {
@@ -85,6 +88,8 @@ struct GenerateRequest<'a> {
     model: &'a str,
     prompt: &'a str,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -103,7 +108,6 @@ mod tests {
     #[test]
     fn default_model() {
         let provider = OllamaProvider::new(None);
-        // Either env var or default
         assert!(!provider.model.is_empty());
     }
 
@@ -119,9 +123,22 @@ mod tests {
             model: "qwen2.5-coder:7b",
             prompt: "hello",
             stream: false,
+            format: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["model"], "qwen2.5-coder:7b");
-        assert_eq!(json["stream"], false);
+        assert!(json.get("format").is_none());
+    }
+
+    #[test]
+    fn request_serialization_json_mode() {
+        let req = GenerateRequest {
+            model: "qwen2.5-coder:7b",
+            prompt: "hello",
+            stream: false,
+            format: Some("json"),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["format"], "json");
     }
 }

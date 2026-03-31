@@ -11,21 +11,17 @@ pub const SYSTEM_PROMPT: &str = "\
 You are a file writer. You receive a task and produce file content.
 
 YOUR OUTPUT FORMAT:
-Line 1: ===FILE_START===
-Lines 2..N: the COMPLETE source code of the file
-Last line: ===FILE_END===
-
-That is your ENTIRE response. Nothing before ===FILE_START===. Nothing after ===FILE_END===.
-
-If your output does not start with ===FILE_START=== the system rejects it immediately.
+===CODE===
+(complete source code of the file)
+===END===
 
 RULES:
 1. Between the markers: ONLY source code. Zero English words. Zero explanations.
 2. EDIT tasks: you receive the current file content. Output the COMPLETE updated file (every line, first to last) with your changes applied.
 3. CREATE tasks: output the complete new file.
-4. If no changes are needed for an EDIT: output the original file unchanged between the markers.
+4. If no changes are needed for an EDIT: output the original file unchanged.
 5. NEVER output 'no changes needed' or any commentary. Just the file.
-6. NEVER use markdown fences (```). Just raw code.
+6. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
 7. Export ALL symbols listed in MANDATORY Exports with EXACT names. Other parallel files import these names. If you rename or omit any, the build fails.
 8. Import ALL symbols listed in Import Interfaces with EXACT names from the specified paths.";
 
@@ -160,9 +156,9 @@ pub fn build_file_prompt(file: &FilePlan, plan: &RunPlan, project_root: &Path) -
          2. Export ALL symbols listed in MANDATORY Exports with EXACT names.\n\
          3. Import symbols from Import Interfaces with EXACT names.\n\
          4. Respond with EXACTLY:\n\
-         ===FILE_START===\n\
+         ===CODE===\n\
          (complete file content — every line)\n\
-         ===FILE_END===\n\n\
+         ===END===\n\n\
          No prose. No explanation. Just markers and code."
             .to_string(),
     );
@@ -280,8 +276,8 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let prompt = build_file_prompt(&file, &test_plan(), dir.path());
-        assert!(prompt.contains("===FILE_START==="));
-        assert!(prompt.contains("===FILE_END==="));
+        assert!(prompt.contains("===CODE==="));
+        assert!(prompt.contains("===END==="));
         assert!(prompt.contains("No prose. No explanation"));
     }
 }

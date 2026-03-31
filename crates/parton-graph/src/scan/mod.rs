@@ -4,6 +4,7 @@
 //! and import relationships, building `FileNode` entries for the graph.
 
 pub mod parser;
+pub mod walker;
 
 use std::path::Path;
 
