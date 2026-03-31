@@ -52,7 +52,7 @@ build_linux_x86() {
         -v "$(pwd)":/app \
         -w /app \
         rust:latest \
-        bash -c "cargo build --release --target x86_64-unknown-linux-gnu"
+        bash -c "apt-get update -qq && apt-get install -y -qq cmake >/dev/null 2>&1 && cargo build --release --target x86_64-unknown-linux-gnu"
 
     cp "target/x86_64-unknown-linux-gnu/release/${BIN_NAME}" "${RELEASE_DIR}/${BIN_NAME}-linux-x64"
     chmod +x "${RELEASE_DIR}/${BIN_NAME}-linux-x64"
