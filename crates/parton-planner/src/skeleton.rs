@@ -2,7 +2,9 @@
 
 use serde::Deserialize;
 
-use parton_core::{FilePlan, ModelProvider, ProviderError, RunPlan};
+use parton_core::{
+    FilePlan, ModelProvider, ProviderError, RunPlan, ToolCall, ToolDefinition, ToolResult,
+};
 
 /// JSON response for goal enrichment.
 #[derive(Deserialize)]
@@ -95,12 +97,15 @@ ALSO — must_export and must_import_from MUST be COMPLETE and PRECISE:
 
 CONVENTIONS must be complete — import style, export style, naming, testing framework, etc.
 
-TESTING IS MANDATORY. For EVERY source file that contains logic you MUST include a corresponding test file in the SAME plan. No exceptions.
+TESTING IS MANDATORY — YOUR PLAN WILL BE REJECTED IF TESTS ARE MISSING.
+  For EVERY source file that contains logic you MUST include a corresponding test file in the SAME plan.
+  Count your logic files. Count your test files. They MUST match (excluding config/CSS/HTML files).
+  If you have 8 logic files and fewer than 8 test files, your plan is INVALID and will be rejected.
   Example: if you create src/hooks/useTodos.ts, you MUST also create src/hooks/useTodos.test.ts.
   Example: if you create src/components/TodoItem.tsx, you MUST also create src/components/TodoItem.test.tsx.
   Example: if you create lib/auth/roles.ts, you MUST also create lib/auth/roles.test.ts.
   Config files (package.json, tsconfig.json, vite.config.ts, index.html, CSS files) do NOT need tests.
-  A plan with 8 logic files and only 1 test file is WRONG. It should have 8 test files.
+  BEFORE returning your plan, count: logic files = N, test files = M. If M < N, add the missing test files.
 
 Use NAMED exports everywhere (export function X, export const Y). NEVER use default exports. This prevents import mismatches between parallel files.
 
@@ -113,6 +118,13 @@ Don't create utility files unless they have 3+ consumers. Inline small helpers.
 
 ALL scripts must be non-interactive and terminate on their own (CI=true, no stdin).
 CRITICAL: if the test runner defaults to watch mode you MUST configure it to run once and exit.
+
+FINAL SELF-CHECK (do this BEFORE returning):
+1. Count files where is_test=false and scaffold_only=false → this is your LOGIC count.
+2. Count files where is_test=true → this is your TEST count.
+3. If TEST count < LOGIC count → ADD the missing test files. Your plan WILL be rejected otherwise.
+4. Every must_import_from path exists in the plan or on disk.
+5. Every must_export symbol is listed.
 
 VERSIONS AND CONFIGURATION — CRITICAL:
 - Use LATEST STABLE versions of ALL dependencies, tools, and frameworks. Not outdated, not canary, not beta.
@@ -147,13 +159,44 @@ pub async fn generate_skeleton(
     project_context: &str,
     provider: &dyn ModelProvider,
 ) -> Result<RunPlan, ProviderError> {
+    generate_skeleton_inner(prompt, project_context, provider, &[], None).await
+}
+
+/// Generate a skeleton plan with tool-use support.
+///
+/// When tools are provided, the LLM can call them to inspect the
+/// codebase during planning instead of relying on a fat summary.
+pub async fn generate_skeleton_with_tools(
+    prompt: &str,
+    project_context: &str,
+    provider: &dyn ModelProvider,
+    tools: &[ToolDefinition],
+    handle_tool: &(dyn Fn(ToolCall) -> ToolResult + Send + Sync),
+) -> Result<RunPlan, ProviderError> {
+    generate_skeleton_inner(prompt, project_context, provider, tools, Some(handle_tool)).await
+}
+
+/// Shared implementation for skeleton generation.
+async fn generate_skeleton_inner(
+    prompt: &str,
+    project_context: &str,
+    provider: &dyn ModelProvider,
+    tools: &[ToolDefinition],
+    handle_tool: Option<&(dyn Fn(ToolCall) -> ToolResult + Send + Sync)>,
+) -> Result<RunPlan, ProviderError> {
     let system = if project_context.is_empty() {
         SKELETON_PROMPT.to_string()
     } else {
         format!("{SKELETON_PROMPT}\n\n# Project Context\n{project_context}")
     };
 
-    let response = provider.send(&system, prompt, true).await?;
+    let response = if let (false, Some(handler)) = (tools.is_empty(), handle_tool) {
+        provider
+            .send_with_tools(&system, prompt, tools, 5, handler)
+            .await?
+    } else {
+        provider.send(&system, prompt, true).await?
+    };
 
     crate::parse_plan(&response.content)
         .map_err(|e| ProviderError::Other(format!("failed to parse skeleton plan: {e}")))

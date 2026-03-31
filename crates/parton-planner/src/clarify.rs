@@ -3,7 +3,10 @@
 //! Generates targeted questions to fill in missing details before planning.
 //! Prompts are battle-tested from production Parton.
 
-use parton_core::{ClarificationResult, ModelProvider, ProviderError, Question, QuestionType};
+use parton_core::{
+    ClarificationResult, ModelProvider, ProviderError, Question, QuestionType, ToolCall,
+    ToolDefinition, ToolResult,
+};
 
 /// Generate clarification questions for a user prompt.
 pub async fn generate_questions(
@@ -11,6 +14,41 @@ pub async fn generate_questions(
     is_greenfield: bool,
     graph_summary: &str,
     provider: &dyn ModelProvider,
+) -> Result<ClarificationResult, ProviderError> {
+    generate_questions_inner(prompt, is_greenfield, graph_summary, provider, &[], None).await
+}
+
+/// Generate clarification questions with tool-use support.
+///
+/// When tools are provided, the LLM can inspect the codebase to
+/// avoid asking about things visible in the code.
+pub async fn generate_questions_with_tools(
+    prompt: &str,
+    is_greenfield: bool,
+    graph_summary: &str,
+    provider: &dyn ModelProvider,
+    tools: &[ToolDefinition],
+    handle_tool: &(dyn Fn(ToolCall) -> ToolResult + Send + Sync),
+) -> Result<ClarificationResult, ProviderError> {
+    generate_questions_inner(
+        prompt,
+        is_greenfield,
+        graph_summary,
+        provider,
+        tools,
+        Some(handle_tool),
+    )
+    .await
+}
+
+/// Shared implementation for question generation.
+async fn generate_questions_inner(
+    prompt: &str,
+    is_greenfield: bool,
+    graph_summary: &str,
+    provider: &dyn ModelProvider,
+    tools: &[ToolDefinition],
+    handle_tool: Option<&(dyn Fn(ToolCall) -> ToolResult + Send + Sync)>,
 ) -> Result<ClarificationResult, ProviderError> {
     let system = build_system_prompt(is_greenfield);
     let repo_ctx = if is_greenfield {
@@ -25,7 +63,14 @@ pub async fn generate_questions(
          Generate clarification questions to fill in the gaps needed for implementation planning.",
     );
 
-    let response = provider.send(&system, &user, true).await?;
+    let response = if let (false, Some(handler)) = (tools.is_empty(), handle_tool) {
+        provider
+            .send_with_tools(&system, &user, tools, 5, handler)
+            .await?
+    } else {
+        provider.send(&system, &user, true).await?
+    };
+
     let mut result = parse_response(&response.content)?;
     add_other_option(&mut result.questions);
     Ok(result)

@@ -29,7 +29,15 @@ CODE RULES:
 - CSS/HTML files: complete — this IS the final version
 - Export ALL symbols in MANDATORY Exports with EXACT names
 - Import ALL symbols from Import Interfaces with EXACT names
-- NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.";
+- NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
+
+ABSOLUTE REQUIREMENT — YOUR OUTPUT MUST CONTAIN RAW SOURCE CODE:
+- You MUST output actual source code between ===CODE=== and ===END===.
+- NEVER output explanations, meta-comments, or descriptions instead of code.
+- NEVER write text like '(no changes needed)' or '(file is unchanged)' — that is NOT code.
+- If editing an existing file, output the COMPLETE file with your changes applied.
+- If the file needs zero changes, output the EXACT existing file content unchanged.
+- There is NO scenario where you skip writing code. ALWAYS output the full file.";
 
 /// System prompt for final execution — full implementation.
 pub const FINAL_PROMPT: &str = "\
@@ -46,11 +54,19 @@ CRITICAL RULES:
 2. PRESERVE all export names EXACTLY.
 3. REPLACE stub/placeholder implementations with real, working code.
 4. The file must remain compilable after your changes.
-5. If the scaffold file is already complete (config files, CSS, HTML), output it UNCHANGED.
-6. For test files: replace placeholder tests with real tests.
-7. NEVER change function signatures — same parameters, same return types.
-8. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
-9. Output the COMPLETE file, every line from first to last.";
+5. For test files: replace placeholder tests with real tests.
+6. NEVER change function signatures — same parameters, same return types.
+7. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
+8. Output the COMPLETE file, every line from first to last.
+
+ABSOLUTE REQUIREMENT — YOUR OUTPUT MUST CONTAIN RAW SOURCE CODE:
+- You MUST output actual source code between ===CODE=== and ===END===.
+- NEVER output explanations, meta-comments, or descriptions instead of code.
+- NEVER write text like '(no changes needed)' or '(file is unchanged)' — that is NOT code.
+- NEVER write '(The file content is identical...)' — that is NOT code.
+- If the scaffold is already complete, output THE EXACT SAME CODE again.
+- There is NO scenario where you skip writing code. ALWAYS output the full file.
+- Your ONLY output is: ===CODE=== then every line of source code then ===END===.";
 
 /// Parse combined scaffold+enrich output into (goal, code).
 ///

@@ -19,11 +19,17 @@ RULES:
 1. Between the markers: ONLY source code. Zero English words. Zero explanations.
 2. EDIT tasks: you receive the current file content. Output the COMPLETE updated file (every line, first to last) with your changes applied.
 3. CREATE tasks: output the complete new file.
-4. If no changes are needed for an EDIT: output the original file unchanged.
-5. NEVER output 'no changes needed' or any commentary. Just the file.
-6. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
-7. Export ALL symbols listed in MANDATORY Exports with EXACT names. Other parallel files import these names. If you rename or omit any, the build fails.
-8. Import ALL symbols listed in Import Interfaces with EXACT names from the specified paths.";
+4. If no changes are needed for an EDIT: output the EXACT original file content unchanged between the markers.
+5. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
+6. Export ALL symbols listed in MANDATORY Exports with EXACT names. Other parallel files import these names. If you rename or omit any, the build fails.
+7. Import ALL symbols listed in Import Interfaces with EXACT names from the specified paths.
+
+ABSOLUTE REQUIREMENT:
+- You MUST ALWAYS output source code between ===CODE=== and ===END===.
+- NEVER output meta-text like '(no changes needed)' or '(file is unchanged)'.
+- NEVER explain what you did. NEVER describe the file. Just output the code.
+- If editing a file that needs zero changes, output the EXACT existing file content.
+- There is NO valid response without code between the markers.";
 
 /// Build the per-file prompt from a file plan and run plan.
 ///

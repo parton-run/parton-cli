@@ -35,6 +35,38 @@ const KEY_FILE_PATTERNS: &[&str] = &[
     "database",
 ];
 
+/// Build a light summary listing only module paths and export counts.
+///
+/// Used when tools are available so the LLM can drill into specifics
+/// on demand instead of receiving the full fat summary up front.
+pub fn build_light_summary(graph: &CodeGraph) -> String {
+    if graph.files.is_empty() {
+        return String::new();
+    }
+
+    let mut lines =
+        vec!["## Existing Modules (use read_file/get_exports tools to inspect)".to_string()];
+
+    let mut paths: Vec<&String> = graph.files.keys().collect();
+    paths.sort();
+
+    for path in &paths {
+        let node = match graph.files.get(*path) {
+            Some(n) => n,
+            None => continue,
+        };
+        let export_count = node.symbols.iter().filter(|s| s.exported).count();
+        if export_count > 0 {
+            lines.push(format!("- {path} ({export_count} exports)"));
+        } else {
+            lines.push(format!("- {path}"));
+        }
+    }
+
+    lines.push(format!("({} files total)", paths.len()));
+    lines.join("\n")
+}
+
 /// Build a planner-friendly summary of the entire code graph.
 ///
 /// Includes:
@@ -247,6 +279,32 @@ mod tests {
         let graph = CodeGraph::default();
         let dir = tempfile::tempdir().unwrap();
         assert!(build_summary(&graph, dir.path()).is_empty());
+    }
+
+    #[test]
+    fn light_summary_empty_graph() {
+        let graph = CodeGraph::default();
+        assert!(build_light_summary(&graph).is_empty());
+    }
+
+    #[test]
+    fn light_summary_shows_export_counts() {
+        let mut graph = CodeGraph::new();
+        graph.add_file(file(
+            "lib/auth.ts",
+            vec![
+                sym("checkAdmin", SymbolKind::Function, "checkAdmin"),
+                sym("isOwner", SymbolKind::Function, "isOwner"),
+            ],
+            vec![],
+        ));
+        graph.add_file(file("lib/utils.ts", vec![], vec![]));
+
+        let summary = build_light_summary(&graph);
+        assert!(summary.contains("lib/auth.ts (2 exports)"));
+        assert!(summary.contains("lib/utils.ts"));
+        assert!(!summary.contains("lib/utils.ts ("));
+        assert!(summary.contains("2 files total"));
     }
 
     #[test]

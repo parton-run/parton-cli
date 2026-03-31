@@ -236,7 +236,18 @@ async fn execute_file(
             let elapsed_ms = start.elapsed().as_millis() as u64;
             let tokens = response.prompt_tokens + response.completion_tokens;
 
-            let content = crate::output::clean_output(&response.content);
+            let mut content = crate::output::clean_output(&response.content);
+
+            // If output is empty for an Edit file, preserve the existing file.
+            // The LLM may have decided no changes are needed.
+            if content.is_empty() && file.action == parton_core::FileAction::Edit {
+                let existing =
+                    std::fs::read_to_string(project_root.join(&file.path)).unwrap_or_default();
+                if !existing.is_empty() {
+                    content = existing;
+                }
+            }
+
             let success = !content.is_empty();
 
             FileResult {

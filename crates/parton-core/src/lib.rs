@@ -12,6 +12,7 @@ pub mod plan;
 pub mod provider;
 pub mod result;
 pub mod stage;
+pub mod tool;
 
 // Re-exports for convenience.
 pub use clarification::{ClarificationResult, PlanningContext, Question, QuestionType};
@@ -21,3 +22,4 @@ pub use plan::{FileAction, FilePlan, ImportRef, RunPlan};
 pub use provider::{ModelProvider, ModelResponse, ProviderError};
 pub use result::{FileResult, PostRunAction, RunResult};
 pub use stage::StageKind;
+pub use tool::{ToolCall, ToolDefinition, ToolResult};

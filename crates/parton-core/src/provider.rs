@@ -7,6 +7,8 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::tool::{ToolCall, ToolDefinition, ToolResult};
+
 /// Response from a model provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelResponse {
@@ -62,6 +64,23 @@ pub trait ModelProvider: Send + Sync {
         prompt: &str,
         json_mode: bool,
     ) -> Result<ModelResponse, ProviderError>;
+
+    /// Send a prompt with tool definitions, running a multi-turn loop.
+    ///
+    /// The LLM can call tools via `handle_tool`; results are fed back
+    /// until the model returns a final text response or `max_turns` is
+    /// reached. Default implementation ignores tools and calls `send`.
+    async fn send_with_tools(
+        &self,
+        system: &str,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        max_turns: usize,
+        handle_tool: &(dyn Fn(ToolCall) -> ToolResult + Send + Sync),
+    ) -> Result<ModelResponse, ProviderError> {
+        let _ = (tools, max_turns, handle_tool);
+        self.send(system, prompt, true).await
+    }
 }
 
 #[cfg(test)]

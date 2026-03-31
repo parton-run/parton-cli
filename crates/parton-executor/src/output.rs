@@ -7,30 +7,67 @@ use crate::scaffold::strip_markdown_fences_public;
 /// Supports both `===CODE===`/`===END===` (new) and
 /// `===FILE_START===`/`===FILE_END===` (legacy) markers.
 /// Strips markdown fences that LLMs sometimes add.
-/// Returns an empty string if no markers found.
+/// Returns an empty string if no markers found or if the LLM
+/// returned a meta-comment instead of actual code.
 pub fn clean_output(content: &str) -> String {
     let trimmed = content.trim();
 
     // Try new markers first.
     if let Some(code) = extract_between_markers(trimmed, "===CODE===", "===END===") {
-        return strip_markdown_fences_public(&code);
+        let cleaned = strip_markdown_fences_public(&code);
+        if is_meta_comment(&cleaned) {
+            return String::new();
+        }
+        return cleaned;
     }
 
     // Fallback to legacy markers.
     if let Some(code) = extract_between_markers(trimmed, "===FILE_START===", "===FILE_END===") {
-        return strip_markdown_fences_public(&code);
+        let cleaned = strip_markdown_fences_public(&code);
+        if is_meta_comment(&cleaned) {
+            return String::new();
+        }
+        return cleaned;
     }
 
     // Try JSON fallback — some responses may still come as {"code": "..."}.
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
         if let Some(code) = val.get("code").and_then(|c| c.as_str()) {
-            if !code.is_empty() {
+            if !code.is_empty() && !is_meta_comment(code) {
                 return strip_markdown_fences_public(code);
             }
         }
     }
 
     String::new()
+}
+
+/// Detect LLM meta-comments that aren't actual code.
+///
+/// LLMs sometimes return explanations instead of code, e.g.
+/// "(The file content is identical to the EXISTING SCAFFOLD...)".
+fn is_meta_comment(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // Short content starting with '(' is almost always a meta-comment.
+    let looks_like_comment = trimmed.starts_with('(') && trimmed.ends_with(')');
+    let has_meta_phrases = [
+        "identical to",
+        "no changes",
+        "no modifications",
+        "already implemented",
+        "already fully implemented",
+        "nothing to replace",
+        "no stubs to replace",
+        "unchanged",
+        "same as",
+    ]
+    .iter()
+    .any(|p| trimmed.to_lowercase().contains(p));
+
+    looks_like_comment && has_meta_phrases
 }
 
 /// Extract text between start and end markers.
@@ -77,6 +114,24 @@ mod tests {
     #[test]
     fn missing_markers_returns_empty() {
         assert_eq!(clean_output("just some text"), "");
+    }
+
+    #[test]
+    fn meta_comment_returns_empty() {
+        let input = "===CODE===\n(The file content is identical to the EXISTING SCAFFOLD provided — it is already fully implemented with no stubs to replace.)\n===END===";
+        assert_eq!(clean_output(input), "");
+    }
+
+    #[test]
+    fn meta_comment_no_changes_returns_empty() {
+        let input = "===CODE===\n(No changes needed — the file is unchanged.)\n===END===";
+        assert_eq!(clean_output(input), "");
+    }
+
+    #[test]
+    fn real_code_with_parens_not_meta() {
+        let input = "===CODE===\n(function() { return 1; })()\n===END===";
+        assert_eq!(clean_output(input), "(function() { return 1; })()");
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub mod graph;
 pub mod queries;
 pub mod query;
 pub mod scan;
+pub mod tools;
 pub mod types;
 
 pub use detect::{detect_language, is_supported};
@@ -55,6 +56,14 @@ pub async fn scan_project(project_root: &Path) -> Result<CodeGraph, GraphError> 
 /// exports, import patterns, and key file snippets.
 pub fn build_graph_summary(graph: &CodeGraph, project_root: &Path) -> String {
     query::summary::build_summary(graph, project_root)
+}
+
+/// Build a light summary listing modules and export counts only.
+///
+/// Used when tools are available for drill-down, so the LLM gets a
+/// compact overview and can request details on demand.
+pub fn build_light_graph_summary(graph: &CodeGraph) -> String {
+    query::summary::build_light_summary(graph)
 }
 
 /// Build per-file context strings for executor prompts.
@@ -114,5 +123,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let graph = CodeGraph::new();
         assert!(build_graph_summary(&graph, dir.path()).is_empty());
+    }
+
+    #[test]
+    fn build_light_summary_on_empty_graph() {
+        let graph = CodeGraph::new();
+        assert!(build_light_graph_summary(&graph).is_empty());
     }
 }

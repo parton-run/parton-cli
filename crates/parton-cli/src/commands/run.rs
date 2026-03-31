@@ -37,8 +37,13 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let is_greenfield = is_greenfield_project(project_root);
 
     // ── Step 0: Code graph ──
-    let (code_graph, graph_summary) = if is_greenfield {
-        (parton_graph::CodeGraph::new(), String::new())
+    let (code_graph, graph_summary, light_summary, tool_defs) = if is_greenfield {
+        (
+            parton_graph::CodeGraph::new(),
+            String::new(),
+            String::new(),
+            vec![],
+        )
     } else {
         style::print_header("Code graph");
         let spin = spinner::Spinner::start("Scanning project...");
@@ -50,6 +55,8 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             });
         spin.stop();
         let summary = parton_graph::build_graph_summary(&graph, project_root);
+        let light = parton_graph::build_light_graph_summary(&graph);
+        let tools = parton_graph::tools::create_tool_definitions();
         if graph.file_count() == 0 {
             style::print_ok("No source files found");
         } else {
@@ -63,22 +70,48 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                     .count()
             ));
         }
-        (graph, summary)
+        (graph, summary, light, tools)
     };
 
     // ── Step 1: Clarification ──
     style::print_header("Analyzing intent");
 
+    // Build a tool handler closure that captures graph + project_root.
+    let tool_graph = &code_graph;
+    let tool_root = project_root;
+    let handle_tool = move |call: parton_core::ToolCall| -> parton_core::ToolResult {
+        parton_graph::tools::handle_tool_call(&call, tool_graph, tool_root)
+    };
+
+    // Use light summary + tools when available, fall back to fat summary.
+    let clarify_summary = if tool_defs.is_empty() {
+        &graph_summary
+    } else {
+        &light_summary
+    };
+
     let spin = spinner::Spinner::start("Analyzing...");
     let clarification = rt
         .block_on(async {
-            parton_planner::generate_questions(
-                prompt,
-                is_greenfield,
-                &graph_summary,
-                &*planning_provider,
-            )
-            .await
+            if tool_defs.is_empty() {
+                parton_planner::generate_questions(
+                    prompt,
+                    is_greenfield,
+                    clarify_summary,
+                    &*planning_provider,
+                )
+                .await
+            } else {
+                parton_planner::generate_questions_with_tools(
+                    prompt,
+                    is_greenfield,
+                    clarify_summary,
+                    &*planning_provider,
+                    &tool_defs,
+                    &handle_tool,
+                )
+                .await
+            }
         })
         .unwrap_or_else(|e| {
             tracing::warn!("Clarification failed: {e}");
@@ -100,11 +133,17 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     }
 
     // Combine project context with graph summary for the planner.
+    // Use light summary when tools are available; fat summary otherwise.
     let project_ctx = parton_planner::build_project_context(project_root);
-    let full_context = if graph_summary.is_empty() {
+    let planner_summary = if tool_defs.is_empty() {
+        &graph_summary
+    } else {
+        &light_summary
+    };
+    let full_context = if planner_summary.is_empty() {
         project_ctx
     } else {
-        format!("{project_ctx}\n\n{graph_summary}")
+        format!("{project_ctx}\n\n{planner_summary}")
     };
 
     // ── Step 2: Skeleton plan ──
@@ -128,8 +167,23 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             });
             let mut skel = rt
                 .block_on(async {
-                    parton_planner::generate_skeleton(&prompt, &full_context, &*planning_provider)
+                    if tool_defs.is_empty() {
+                        parton_planner::generate_skeleton(
+                            &prompt,
+                            &full_context,
+                            &*planning_provider,
+                        )
                         .await
+                    } else {
+                        parton_planner::generate_skeleton_with_tools(
+                            &prompt,
+                            &full_context,
+                            &*planning_provider,
+                            &tool_defs,
+                            &handle_tool,
+                        )
+                        .await
+                    }
                 })
                 .map_err(|e| anyhow::anyhow!("planning failed: {e}"))?;
             spin.stop();
@@ -172,12 +226,23 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
                 let spin = spinner::Spinner::start("Replanning...");
                 plan = rt
                     .block_on(async {
-                        parton_planner::generate_skeleton(
-                            &replan_prompt,
-                            &full_context,
-                            &*planning_provider,
-                        )
-                        .await
+                        if tool_defs.is_empty() {
+                            parton_planner::generate_skeleton(
+                                &replan_prompt,
+                                &full_context,
+                                &*planning_provider,
+                            )
+                            .await
+                        } else {
+                            parton_planner::generate_skeleton_with_tools(
+                                &replan_prompt,
+                                &full_context,
+                                &*planning_provider,
+                                &tool_defs,
+                                &handle_tool,
+                            )
+                            .await
+                        }
                     })
                     .map_err(|e| anyhow::anyhow!("replan failed: {e}"))?;
                 spin.stop();
@@ -372,32 +437,53 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
             } else {
                 style::print_err("Validation failed — attempting auto-fix...");
 
-                let fix_prog = progress::ParallelProgress::new(&final_labels);
-                let _ticker = fix_prog.start_ticker();
-                let fix_results = rt.block_on(async {
-                    parton_executor::execute_streaming(
-                        &final_plan,
-                        &*exec_provider,
-                        project_root,
-                        parton_executor::ExecMode::Final,
-                        &val_result.errors,
-                        &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
-                    )
-                    .await
-                });
-                drop(_ticker);
+                // Only re-run files that are mentioned in the errors.
+                let mut fix_plan = final_plan.clone();
+                fix_plan
+                    .files
+                    .retain(|f| val_result.errors.contains(&f.path));
 
-                let fix_ok: Vec<FileResult> =
-                    fix_results.iter().filter(|r| r.success).cloned().collect();
-                let _ = parton_executor::write_results(&fix_ok, project_root);
-
-                let retry = run_validation_check(&plan.validation_commands, project_root);
-                if retry.passed {
-                    style::print_ok("Auto-fix successful — validation passed");
-                } else {
-                    style::print_err("Validation still failing after auto-fix");
-                    for line in retry.errors.lines().take(10) {
+                if fix_plan.files.is_empty() {
+                    style::print_err("No planned files in error output — cannot auto-fix");
+                    for line in val_result.errors.lines().take(10) {
                         eprintln!("    {}", style::dim(line));
+                    }
+                } else {
+                    style::print_ok(&format!(
+                        "Auto-fixing {} of {} files",
+                        fix_plan.files.len(),
+                        final_plan.files.len()
+                    ));
+
+                    let fix_labels: Vec<String> =
+                        fix_plan.files.iter().map(|f| f.path.clone()).collect();
+                    let fix_prog = progress::ParallelProgress::new(&fix_labels);
+                    let _ticker = fix_prog.start_ticker();
+                    let fix_results = rt.block_on(async {
+                        parton_executor::execute_streaming(
+                            &fix_plan,
+                            &*exec_provider,
+                            project_root,
+                            parton_executor::ExecMode::Final,
+                            &val_result.errors,
+                            &|r| fix_prog.complete(&r.path, r.elapsed_ms, r.success),
+                        )
+                        .await
+                    });
+                    drop(_ticker);
+
+                    let fix_ok: Vec<FileResult> =
+                        fix_results.iter().filter(|r| r.success).cloned().collect();
+                    let _ = parton_executor::write_results(&fix_ok, project_root);
+
+                    let retry = run_validation_check(&plan.validation_commands, project_root);
+                    if retry.passed {
+                        style::print_ok("Auto-fix successful — validation passed");
+                    } else {
+                        style::print_err("Validation still failing after auto-fix");
+                        for line in retry.errors.lines().take(10) {
+                            eprintln!("    {}", style::dim(line));
+                        }
                     }
                 }
             }
