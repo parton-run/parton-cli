@@ -33,6 +33,32 @@ RULES:
 ///
 /// Includes conventions, goal, exports contract, import interfaces,
 /// context files, and output instructions.
+/// Build the per-file prompt with optional graph context.
+///
+/// When `graph_context` is provided, it is inserted between the
+/// import interfaces and context files sections.
+pub fn build_file_prompt_with_graph(
+    file: &FilePlan,
+    plan: &RunPlan,
+    project_root: &Path,
+    graph_context: Option<&str>,
+) -> String {
+    let mut prompt = build_file_prompt(file, plan, project_root);
+
+    if let Some(ctx) = graph_context {
+        if !ctx.is_empty() {
+            // Insert graph context before the OUTPUT INSTRUCTION section.
+            if let Some(pos) = prompt.find("## OUTPUT INSTRUCTION") {
+                prompt.insert_str(pos, &format!("{ctx}\n\n"));
+            } else {
+                prompt.push_str(&format!("\n\n{ctx}"));
+            }
+        }
+    }
+
+    prompt
+}
+
 pub fn build_file_prompt(file: &FilePlan, plan: &RunPlan, project_root: &Path) -> String {
     let mut sections = Vec::new();
 

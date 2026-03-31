@@ -144,6 +144,37 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
         return Ok(());
     }
 
+    // ── Step 1.5: Build code graph ──
+    let has_scannable = plan.files.iter().any(|f| {
+        f.action == parton_core::FileAction::Edit
+            || f.must_import_from
+                .iter()
+                .any(|i| project_root.join(&i.path).exists())
+            || f.context_files
+                .iter()
+                .any(|c| project_root.join(c).exists())
+    });
+
+    let graph_contexts = if !has_scannable {
+        std::collections::HashMap::new()
+    } else {
+        style::print_header("Code graph");
+        let spin = spinner::Spinner::start("Scanning project...");
+        let ctx = rt
+            .block_on(async { parton_graph::build_graph_contexts(&plan.files, project_root).await })
+            .unwrap_or_else(|e| {
+                tracing::warn!("graph building failed: {e}");
+                std::collections::HashMap::new()
+            });
+        spin.stop();
+        if ctx.is_empty() {
+            style::print_ok("No relevant symbols found");
+        } else {
+            style::print_ok(&format!("{} files enriched with signatures", ctx.len()));
+        }
+        ctx
+    };
+
     // ── Step 2: Scaffold+Enrich (parallel, combined) ──
     style::print_header("Step 2 — Scaffold");
     let exec_labels: Vec<String> = plan.files.iter().map(|f| f.path.clone()).collect();
@@ -151,9 +182,13 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let _ticker = scaffold_prog.start_ticker();
 
     let scaffold_results = rt.block_on(async {
-        parton_executor::scaffold_streaming(&plan, &*exec_provider, project_root, &|r| {
-            scaffold_prog.complete(&r.path, r.elapsed_ms, r.success)
-        })
+        parton_executor::scaffold_streaming_with_graph(
+            &plan,
+            &*exec_provider,
+            project_root,
+            &graph_contexts,
+            &|r| scaffold_prog.complete(&r.path, r.elapsed_ms, r.success),
+        )
         .await
     });
     drop(_ticker);
@@ -265,12 +300,13 @@ pub fn run(prompt: &str, project_root: &Path, _review: bool) -> Result<()> {
     let _ticker = final_prog.start_ticker();
 
     let final_results = rt.block_on(async {
-        parton_executor::execute_streaming(
+        parton_executor::execute_streaming_with_graph(
             &final_plan,
             &*exec_provider,
             project_root,
             parton_executor::ExecMode::Final,
             &structure_errors,
+            &graph_contexts,
             &|r| final_prog.complete(&r.path, r.elapsed_ms, r.success),
         )
         .await

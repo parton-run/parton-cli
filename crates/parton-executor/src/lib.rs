@@ -17,7 +17,10 @@ pub mod writer;
 
 pub use compliance::{check_all, check_file, ComplianceIssue, IssueType};
 pub use output::clean_output;
-pub use prompt::{build_file_prompt, SYSTEM_PROMPT};
-pub use runner::{execute, execute_streaming, scaffold_streaming, ExecMode, ScaffoldResult};
+pub use prompt::{build_file_prompt, build_file_prompt_with_graph, SYSTEM_PROMPT};
+pub use runner::{
+    execute, execute_streaming, execute_streaming_with_graph, scaffold_streaming,
+    scaffold_streaming_with_graph, ExecMode, ScaffoldResult,
+};
 pub use structure_check::{run_check, run_install, CheckResult};
 pub use writer::write_results;

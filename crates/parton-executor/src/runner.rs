@@ -1,12 +1,13 @@
 //! Parallel file execution engine.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
 use parton_core::{FilePlan, FileResult, ModelProvider, RunPlan};
 
 use crate::output::clean_output;
-use crate::prompt::build_file_prompt;
+use crate::prompt::build_file_prompt_with_graph;
 use crate::scaffold;
 
 /// Execution mode determines which system prompt is used.
@@ -46,12 +47,26 @@ pub async fn scaffold_streaming(
     project_root: &Path,
     on_result: &dyn Fn(&ScaffoldResult),
 ) -> Vec<ScaffoldResult> {
+    scaffold_streaming_with_graph(plan, provider, project_root, &HashMap::new(), on_result).await
+}
+
+/// Execute scaffold+enrich in parallel with graph context.
+pub async fn scaffold_streaming_with_graph(
+    plan: &RunPlan,
+    provider: &dyn ModelProvider,
+    project_root: &Path,
+    graph_contexts: &HashMap<String, String>,
+    on_result: &dyn Fn(&ScaffoldResult),
+) -> Vec<ScaffoldResult> {
     use futures_util::stream::{FuturesUnordered, StreamExt};
 
     let mut futures: FuturesUnordered<_> = plan
         .files
         .iter()
-        .map(|file| scaffold_single(file, plan, provider, project_root))
+        .map(|file| {
+            let graph_ctx = graph_contexts.get(&file.path).map(|s| s.as_str());
+            scaffold_single(file, plan, provider, project_root, graph_ctx)
+        })
         .collect();
 
     let mut results = Vec::with_capacity(plan.files.len());
@@ -68,8 +83,9 @@ async fn scaffold_single(
     plan: &RunPlan,
     provider: &dyn ModelProvider,
     project_root: &Path,
+    graph_context: Option<&str>,
 ) -> ScaffoldResult {
-    let prompt = build_file_prompt(file, plan, project_root);
+    let prompt = build_file_prompt_with_graph(file, plan, project_root, graph_context);
     let start = Instant::now();
 
     match provider
@@ -120,12 +136,45 @@ pub async fn execute_streaming(
     structure_errors: &str,
     on_result: &dyn Fn(&FileResult),
 ) -> Vec<FileResult> {
+    execute_streaming_with_graph(
+        plan,
+        provider,
+        project_root,
+        mode,
+        structure_errors,
+        &HashMap::new(),
+        on_result,
+    )
+    .await
+}
+
+/// Execute all files in parallel with graph context.
+pub async fn execute_streaming_with_graph(
+    plan: &RunPlan,
+    provider: &dyn ModelProvider,
+    project_root: &Path,
+    mode: ExecMode,
+    structure_errors: &str,
+    graph_contexts: &HashMap<String, String>,
+    on_result: &dyn Fn(&FileResult),
+) -> Vec<FileResult> {
     use futures_util::stream::{FuturesUnordered, StreamExt};
 
     let mut futures: FuturesUnordered<_> = plan
         .files
         .iter()
-        .map(|file| execute_file(file, plan, provider, project_root, mode, structure_errors))
+        .map(|file| {
+            let graph_ctx = graph_contexts.get(&file.path).map(|s| s.as_str());
+            execute_file(
+                file,
+                plan,
+                provider,
+                project_root,
+                mode,
+                structure_errors,
+                graph_ctx,
+            )
+        })
         .collect();
 
     let mut results = Vec::with_capacity(plan.files.len());
@@ -154,6 +203,7 @@ async fn execute_file(
     project_root: &Path,
     mode: ExecMode,
     structure_errors: &str,
+    graph_context: Option<&str>,
 ) -> FileResult {
     let system_prompt = match mode {
         ExecMode::Scaffold => scaffold::SCAFFOLD_PROMPT,
@@ -162,8 +212,11 @@ async fn execute_file(
     };
 
     let mut prompt = match mode {
-        ExecMode::Final => build_final_prompt(file, plan, project_root),
-        _ => build_file_prompt(file, plan, project_root),
+        ExecMode::Final => {
+            let base = build_file_prompt_with_graph(file, plan, project_root, graph_context);
+            build_final_prompt_from(file, &base, project_root)
+        }
+        _ => build_file_prompt_with_graph(file, plan, project_root, graph_context),
     };
 
     // Inject structure check errors into final execution.
@@ -211,14 +264,12 @@ async fn execute_file(
 }
 
 /// Build prompt for final execution — includes existing scaffold content.
-fn build_final_prompt(file: &FilePlan, plan: &RunPlan, project_root: &Path) -> String {
-    let base_prompt = build_file_prompt(file, plan, project_root);
-
+fn build_final_prompt_from(file: &FilePlan, base_prompt: &str, project_root: &Path) -> String {
     let scaffold_path = project_root.join(&file.path);
     let scaffold_content = std::fs::read_to_string(&scaffold_path).unwrap_or_default();
 
     if scaffold_content.is_empty() {
-        return base_prompt;
+        return base_prompt.to_string();
     }
 
     format!(
