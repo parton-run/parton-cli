@@ -78,11 +78,16 @@ set -euo pipefail
 
 # Parton installer
 # Usage: curl -fsSL https://parton.run/install.sh | sh
-#   or:  PARTON_VERSION=v0.3.0 curl -fsSL https://parton.run/install.sh | sh
+#   or:  PARTON_VERSION=v0.3.3 curl -fsSL https://parton.run/install.sh | sh
 
 REPO="parton-run/parton-cli"
 VERSION="${PARTON_VERSION:-latest}"
-BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+
+if [ "$VERSION" = "latest" ]; then
+  BASE_URL="https://github.com/${REPO}/releases/latest/download"
+else
+  BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+fi
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
