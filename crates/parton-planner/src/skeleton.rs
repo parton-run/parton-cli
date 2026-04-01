@@ -12,6 +12,49 @@ struct EnrichResponse {
     goal: String,
 }
 
+/// Light skeleton prompt — just file list + contracts. Used when KYP map is available.
+const LIGHT_SKELETON_PROMPT: &str = r#"You are a software architect. List the files needed for this task.
+
+Return a single JSON object. No text before or after. No markdown fences.
+
+{
+  "summary": "one line",
+  "conventions": ["project rules"],
+  "files": [
+    {
+      "path": "relative path",
+      "action": "Create" or "Edit",
+      "goal": "ONE sentence — what this file does",
+      "must_export": ["exact symbol names"],
+      "must_import_from": [{"path": "source file path", "symbols": ["names"]}],
+      "context_files": ["existing files needed"],
+      "scaffold_only": true or false,
+      "is_test": true or false
+    }
+  ],
+  "install_command": "string or null",
+  "check_commands": ["compile check commands"],
+  "validation_commands": ["build + test commands"],
+  "done": true or false,
+  "remaining_work": "string or null"
+}
+
+RULES:
+- goal = ONE sentence. Details come in a separate step.
+- must_export = EXACT symbol names. Other files import these.
+- must_import_from = EXACT paths and symbols.
+- Every file imported by another MUST exist in the plan or on disk.
+- TESTING IS MANDATORY — every logic file needs a test file. Count them.
+- scaffold_only=true for config/CSS/HTML files.
+- is_test=true for test files.
+- Max 15 files per phase.
+- Use NAMED exports (no default exports).
+- EDIT for existing files, CREATE for new.
+
+FINAL CHECK: logic_files == test_files. If not, add missing tests.
+
+Return valid JSON only."#;
+
 /// System prompt for skeleton planning — full contracts, minimal goals.
 const SKELETON_PROMPT: &str = r#"You are a software architect producing a JSON execution plan SKELETON.
 
@@ -152,6 +195,27 @@ You MUST respond with ONLY a JSON object:
 
 CRITICAL: Do NOT change any function names, prop names, or type names from the skeleton goal.
 The skeleton goal is the interface contract. You are adding implementation details, not changing the interface."#;
+
+/// Generate a light skeleton plan — minimal prompt, one-shot, fast.
+///
+/// Used when KYP map provides full context. Generates file list +
+/// contracts only. Goals are enriched in a separate parallel step.
+pub async fn generate_light_skeleton(
+    prompt: &str,
+    project_context: &str,
+    provider: &dyn ModelProvider,
+) -> Result<RunPlan, ProviderError> {
+    let system = if project_context.is_empty() {
+        LIGHT_SKELETON_PROMPT.to_string()
+    } else {
+        format!("{LIGHT_SKELETON_PROMPT}\n\n# Project Context\n{project_context}")
+    };
+
+    let response = provider.send(&system, prompt, true).await?;
+
+    crate::parse_plan(&response.content)
+        .map_err(|e| ProviderError::Other(format!("failed to parse light skeleton: {e}")))
+}
 
 /// Generate a skeleton plan (contracts only, minimal goals).
 pub async fn generate_skeleton(

@@ -97,12 +97,14 @@ fn send_sync(
         ProviderError::Other(format!("failed to read output from '{command}': {e}"))
     })?;
 
-    let content = parse_output(command, &output.stdout)?;
-    let prompt_tokens = (prompt.len() / 4) as u32;
-    let completion_tokens = (content.len() / 4) as u32;
+    let parsed = parse_output(command, &output.stdout)?;
+    let prompt_tokens = parsed.prompt_tokens.unwrap_or((prompt.len() / 4) as u32);
+    let completion_tokens = parsed
+        .completion_tokens
+        .unwrap_or((parsed.content.len() / 4) as u32);
 
     Ok(ModelResponse {
-        content,
+        content: parsed.content,
         prompt_tokens,
         completion_tokens,
     })
@@ -150,12 +152,16 @@ fn send_sync_with_system(
         ProviderError::Other(format!("failed to read output from '{command}': {e}"))
     })?;
 
-    let content = parse_output(command, &output.stdout)?;
-    let prompt_tokens = ((system.len() + prompt.len()) / 4) as u32;
-    let completion_tokens = (content.len() / 4) as u32;
+    let parsed = parse_output(command, &output.stdout)?;
+    let prompt_tokens = parsed
+        .prompt_tokens
+        .unwrap_or(((system.len() + prompt.len()) / 4) as u32);
+    let completion_tokens = parsed
+        .completion_tokens
+        .unwrap_or((parsed.content.len() / 4) as u32);
 
     Ok(ModelResponse {
-        content,
+        content: parsed.content,
         prompt_tokens,
         completion_tokens,
     })
@@ -170,20 +176,20 @@ fn configure_cli_args(cmd: &mut Command, command: &str, model: Option<&str>) {
                 "--dangerously-skip-permissions",
                 "--output-format",
                 "json",
+                "--tools",
+                "",
+                "--no-session-persistence",
             ]);
         }
         "codex" => {
-            let temp_dir = std::env::temp_dir().join("parton-codex-sandbox");
-            let _ = std::fs::create_dir_all(&temp_dir);
             cmd.args([
                 "exec",
                 "--json",
                 "--ephemeral",
                 "--skip-git-repo-check",
-                "-C",
+                "--full-auto",
+                "-",
             ]);
-            cmd.arg(temp_dir.to_string_lossy().as_ref());
-            cmd.arg("-");
         }
         _ => {}
     }
@@ -194,23 +200,119 @@ fn configure_cli_args(cmd: &mut Command, command: &str, model: Option<&str>) {
     }
 }
 
+/// Parsed CLI output with content and optional token counts.
+struct CliOutput {
+    content: String,
+    prompt_tokens: Option<u32>,
+    completion_tokens: Option<u32>,
+}
+
 /// Parse raw CLI output into text content.
-fn parse_output(command: &str, stdout: &[u8]) -> Result<String, ProviderError> {
+fn parse_output(command: &str, stdout: &[u8]) -> Result<CliOutput, ProviderError> {
     let raw = String::from_utf8_lossy(stdout).trim().to_string();
     if raw.is_empty() {
         return Err(ProviderError::Other(format!(
             "'{command}' returned empty output"
         )));
     }
-    // Claude with --output-format json wraps response in a JSON envelope.
-    if command == "claude" {
-        if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(result) = envelope.get("result").and_then(|r| r.as_str()) {
-                return Ok(result.to_string());
+
+    match command {
+        "claude" => parse_claude_output(&raw),
+        "codex" => parse_codex_output(&raw),
+        _ => Ok(CliOutput {
+            content: raw,
+            prompt_tokens: None,
+            completion_tokens: None,
+        }),
+    }
+}
+
+/// Parse claude --output-format json envelope.
+fn parse_claude_output(raw: &str) -> Result<CliOutput, ProviderError> {
+    if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(raw) {
+        let content = envelope
+            .get("result")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .to_string();
+        if content.is_empty() {
+            return Err(ProviderError::Other("claude returned empty result".into()));
+        }
+        return Ok(CliOutput {
+            content,
+            prompt_tokens: None,
+            completion_tokens: None,
+        });
+    }
+    Ok(CliOutput {
+        content: raw.to_string(),
+        prompt_tokens: None,
+        completion_tokens: None,
+    })
+}
+
+/// Parse codex NDJSON stream output.
+///
+/// Codex returns one JSON object per line:
+/// - `item.completed` → `item.text` has the response
+/// - `turn.completed` → `usage` has token counts
+fn parse_codex_output(raw: &str) -> Result<CliOutput, ProviderError> {
+    let mut content = String::new();
+    let mut prompt_tokens = None;
+    let mut completion_tokens = None;
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let obj: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Extract text from item.completed events.
+        if obj.get("type").and_then(|t| t.as_str()) == Some("item.completed") {
+            if let Some(text) = obj
+                .get("item")
+                .and_then(|i| i.get("text"))
+                .and_then(|t| t.as_str())
+            {
+                if !text.is_empty() {
+                    if !content.is_empty() {
+                        content.push('\n');
+                    }
+                    content.push_str(text);
+                }
+            }
+        }
+
+        // Extract usage from turn.completed.
+        if obj.get("type").and_then(|t| t.as_str()) == Some("turn.completed") {
+            if let Some(usage) = obj.get("usage") {
+                prompt_tokens = usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                completion_tokens = usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
             }
         }
     }
-    Ok(raw)
+
+    if content.is_empty() {
+        return Err(ProviderError::Other(
+            "codex returned no text content".into(),
+        ));
+    }
+
+    Ok(CliOutput {
+        content,
+        prompt_tokens,
+        completion_tokens,
+    })
 }
 
 #[cfg(test)]
@@ -221,13 +323,32 @@ mod tests {
     fn parse_output_claude_json() {
         let json = r#"{"result":"hello world","usage":{"input_tokens":10}}"#;
         let result = parse_output("claude", json.as_bytes()).unwrap();
-        assert_eq!(result, "hello world");
+        assert_eq!(result.content, "hello world");
+    }
+
+    #[test]
+    fn parse_output_codex_ndjson() {
+        let ndjson = r#"{"type":"thread.started","thread_id":"abc"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello world"}}
+{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}"#;
+        let result = parse_output("codex", ndjson.as_bytes()).unwrap();
+        assert_eq!(result.content, "hello world");
+        assert_eq!(result.prompt_tokens, Some(100));
+        assert_eq!(result.completion_tokens, Some(20));
+    }
+
+    #[test]
+    fn parse_output_codex_empty_text() {
+        let ndjson = r#"{"type":"thread.started","thread_id":"abc"}
+{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":0}}"#;
+        assert!(parse_output("codex", ndjson.as_bytes()).is_err());
     }
 
     #[test]
     fn parse_output_plain_text() {
         let result = parse_output("some-cli", b"plain output").unwrap();
-        assert_eq!(result, "plain output");
+        assert_eq!(result.content, "plain output");
     }
 
     #[test]

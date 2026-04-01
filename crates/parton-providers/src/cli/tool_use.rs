@@ -61,7 +61,18 @@ pub fn build_followup_prompt(original_prompt: &str, tool_results: &[(String, Str
 
 /// Parse a CLI response and extract either tool calls or final content.
 pub fn parse_tool_response(raw: &str) -> Result<ToolResponse, ProviderError> {
-    let trimmed = raw.trim();
+    // Strip control characters (except \n \r \t) that Claude CLI sometimes injects.
+    let sanitized: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_control() && c != '\n' && c != '\r' && c != '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim();
 
     // Extract the first JSON object, ignoring trailing text.
     let json_str = extract_json_object(trimmed)

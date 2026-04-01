@@ -92,9 +92,22 @@ async fn scaffold_single(
         .await
     {
         Ok(response) => {
-            let (goal, code) = scaffold::parse_scaffold_output(&response.content);
+            let (goal, mut code) = scaffold::parse_scaffold_output(&response.content);
             let elapsed_ms = start.elapsed().as_millis() as u64;
             let tokens = response.prompt_tokens + response.completion_tokens;
+
+            // If scaffold returned a diff for an Edit file, apply it.
+            if code.is_empty()
+                && file.action == parton_core::FileAction::Edit
+                && crate::diff::is_diff_response(&response.content)
+            {
+                let existing =
+                    std::fs::read_to_string(project_root.join(&file.path)).unwrap_or_default();
+                if let Some(hunks) = crate::diff::parse_diff(&response.content) {
+                    code = crate::diff::apply_diff(&existing, &hunks).unwrap_or_default();
+                }
+            }
+
             let success = !code.is_empty();
 
             ScaffoldResult {
@@ -236,10 +249,29 @@ async fn execute_file(
             let elapsed_ms = start.elapsed().as_millis() as u64;
             let tokens = response.prompt_tokens + response.completion_tokens;
 
-            let mut content = crate::output::clean_output(&response.content);
+            // Check if response is a diff (Edit mode optimization).
+            let mut content = if file.action == parton_core::FileAction::Edit
+                && crate::diff::is_diff_response(&response.content)
+            {
+                let existing =
+                    std::fs::read_to_string(project_root.join(&file.path)).unwrap_or_default();
+                match crate::diff::parse_diff(&response.content) {
+                    Some(hunks) => {
+                        crate::diff::apply_diff(&existing, &hunks).unwrap_or_else(|| {
+                            tracing::warn!(
+                                "diff apply failed for {}, using full output",
+                                file.path
+                            );
+                            crate::output::clean_output(&response.content)
+                        })
+                    }
+                    None => crate::output::clean_output(&response.content),
+                }
+            } else {
+                crate::output::clean_output(&response.content)
+            };
 
             // If output is empty for an Edit file, preserve the existing file.
-            // The LLM may have decided no changes are needed.
             if content.is_empty() && file.action == parton_core::FileAction::Edit {
                 let existing =
                     std::fs::read_to_string(project_root.join(&file.path)).unwrap_or_default();

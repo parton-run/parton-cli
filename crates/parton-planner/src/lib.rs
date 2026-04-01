@@ -18,5 +18,7 @@ pub use clarify::{generate_questions, generate_questions_with_tools};
 pub use context::build_project_context;
 pub use parse::{parse_plan, ParseError};
 pub use prompt::SYSTEM_PROMPT;
-pub use skeleton::{enrich_plan, generate_skeleton, generate_skeleton_with_tools};
+pub use skeleton::{
+    enrich_plan, generate_light_skeleton, generate_skeleton, generate_skeleton_with_tools,
+};
 pub use validate::{validate_plan, ValidationError};

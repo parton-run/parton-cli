@@ -25,3 +25,8 @@ pub fn print_kv(key: &str, value: &str) {
 pub fn dim(text: &str) -> String {
     format!("\x1b[2m{text}\x1b[0m")
 }
+
+/// Format text as bold.
+pub fn bold(text: &str) -> String {
+    format!("\x1b[1m{text}\x1b[0m")
+}

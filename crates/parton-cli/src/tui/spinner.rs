@@ -22,9 +22,15 @@ impl Spinner {
         let handle = thread::spawn(move || {
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             let mut i = 0;
+            let start = std::time::Instant::now();
             while running_clone.load(Ordering::Relaxed) {
-                // Use \x1b[2K to clear entire line, then \r to go to start.
-                eprint!("\x1b[2K\r  {} {} ", frames[i % frames.len()], msg);
+                let elapsed = start.elapsed().as_secs();
+                let timer = if elapsed >= 2 {
+                    format!(" ({elapsed}s)")
+                } else {
+                    String::new()
+                };
+                eprint!("\x1b[2K\r  {} {}{} ", frames[i % frames.len()], msg, timer);
                 let _ = io::stderr().flush();
                 thread::sleep(Duration::from_millis(80));
                 i += 1;

@@ -1,8 +1,8 @@
 //! Tool definitions and handler for LLM tool-use.
 //!
-//! Provides graph-backed tools (read_file, get_exports, get_imports,
-//! search_symbols, list_files) that the planner/clarifier can call
-//! to drill into specific parts of the codebase.
+//! Provides tools for the planner/clarifier to drill into specific
+//! files. The KYP map (.parton/map) is the primary context source;
+//! tools are for reading individual files when more detail is needed.
 
 mod handlers;
 
@@ -14,6 +14,8 @@ use serde_json::json;
 use crate::types::CodeGraph;
 
 /// Create tool definitions for the planner/clarifier.
+///
+/// Only file-level tools — the KYP map provides the overview.
 pub fn create_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
@@ -25,39 +27,6 @@ pub fn create_tool_definitions() -> Vec<ToolDefinition> {
                     "path": {"type": "string", "description": "Relative file path"}
                 },
                 "required": ["path"]
-            }),
-        },
-        ToolDefinition {
-            name: "get_exports".into(),
-            description: "Get exported symbols from a file (from the code graph).".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path"}
-                },
-                "required": ["path"]
-            }),
-        },
-        ToolDefinition {
-            name: "get_imports".into(),
-            description: "Get imports of a file (from the code graph).".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path"}
-                },
-                "required": ["path"]
-            }),
-        },
-        ToolDefinition {
-            name: "search_symbols".into(),
-            description: "Search exported symbols by name substring.".into(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"}
-                },
-                "required": ["query"]
             }),
         },
         ToolDefinition {
@@ -78,9 +47,6 @@ pub fn create_tool_definitions() -> Vec<ToolDefinition> {
 pub fn handle_tool_call(call: &ToolCall, graph: &CodeGraph, root: &Path) -> ToolResult {
     let content = match call.name.as_str() {
         "read_file" => handlers::read_file(call, root),
-        "get_exports" => handlers::get_exports(call, graph),
-        "get_imports" => handlers::get_imports(call, graph),
-        "search_symbols" => handlers::search_symbols(call, graph),
         "list_files" => handlers::list_files(call, graph),
         _ => format!("unknown tool: {}", call.name),
     };
@@ -100,18 +66,8 @@ mod tests {
         g.add_file(FileNode {
             path: "lib/auth.ts".into(),
             language: Language::TypeScript,
-            symbols: vec![Symbol {
-                name: "checkAdmin".into(),
-                kind: SymbolKind::Function,
-                signature: "export function checkAdmin(): boolean".into(),
-                line_start: 1,
-                line_end: 5,
-                exported: true,
-            }],
-            imports: vec![ImportEdge {
-                from_path: "lib/db.ts".into(),
-                symbols: vec!["db".into()],
-            }],
+            symbols: vec![],
+            imports: vec![],
         });
         g
     }
@@ -126,31 +82,7 @@ mod tests {
 
     #[test]
     fn tool_definitions_count() {
-        assert_eq!(create_tool_definitions().len(), 5);
-    }
-
-    #[test]
-    fn get_exports_returns_symbols() {
-        let g = test_graph();
-        let call = make_call("get_exports", json!({"path": "lib/auth.ts"}));
-        let result = handle_tool_call(&call, &g, Path::new("/tmp"));
-        assert!(result.content.contains("checkAdmin"));
-    }
-
-    #[test]
-    fn get_imports_returns_edges() {
-        let g = test_graph();
-        let call = make_call("get_imports", json!({"path": "lib/auth.ts"}));
-        let result = handle_tool_call(&call, &g, Path::new("/tmp"));
-        assert!(result.content.contains("lib/db.ts"));
-    }
-
-    #[test]
-    fn search_symbols_finds_match() {
-        let g = test_graph();
-        let call = make_call("search_symbols", json!({"query": "admin"}));
-        let result = handle_tool_call(&call, &g, Path::new("/tmp"));
-        assert!(result.content.contains("checkAdmin"));
+        assert_eq!(create_tool_definitions().len(), 2);
     }
 
     #[test]

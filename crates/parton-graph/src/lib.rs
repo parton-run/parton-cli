@@ -10,11 +10,13 @@ pub mod detect;
 pub mod error;
 pub mod grammar;
 pub mod graph;
+pub mod kyp;
 pub mod queries;
 pub mod query;
 pub mod scan;
 pub mod tools;
 pub mod types;
+pub mod verify;
 
 pub use detect::{detect_language, is_supported};
 pub use error::GraphError;
@@ -33,10 +35,22 @@ use parton_core::FilePlan;
 /// tree-sitter, and returns the in-memory graph. This should run
 /// once at the start of the pipeline.
 pub async fn scan_project(project_root: &Path) -> Result<CodeGraph, GraphError> {
+    let (graph, _store) = scan_project_with_store(project_root).await?;
+    Ok(graph)
+}
+
+/// Scan a project and return both the graph and the grammar store.
+///
+/// The grammar store can be reused for contract verification later
+/// in the pipeline, avoiding Wasm engine initialization issues.
+pub async fn scan_project_with_store(
+    project_root: &Path,
+) -> Result<(CodeGraph, GrammarStore), GraphError> {
     let source_files = scan::walker::collect_source_files(project_root);
 
     if source_files.is_empty() {
-        return Ok(CodeGraph::new());
+        let store = GrammarStore::with_default_cache()?;
+        return Ok((CodeGraph::new(), store));
     }
 
     let mut store = GrammarStore::with_default_cache()?;
@@ -47,7 +61,7 @@ pub async fn scan_project(project_root: &Path) -> Result<CodeGraph, GraphError> 
         graph.add_file(node);
     }
 
-    Ok(graph)
+    Ok((graph, store))
 }
 
 /// Build a high-level summary of the graph for the planner/clarifier.

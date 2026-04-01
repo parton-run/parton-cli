@@ -9,9 +9,25 @@ You are a code scaffolder and specification writer. You receive a file skeleton 
 
 YOUR OUTPUT FORMAT (follow EXACTLY):
 {\"goal\": \"detailed enriched goal text here\"}
+
+Then choose ONE of these based on the task:
+
+FOR NEW FILES (Create) or SMALL FILES:
 ===CODE===
-(complete minimal compilable source code — raw code, no markdown fences)
+(complete minimal compilable source code)
 ===END===
+
+FOR EDITING LARGE EXISTING FILES (over 100 lines):
+===DIFF===
+@@ after: anchor line text @@
++new lines to add
+
+@@ replace: anchor line text @@
+-old lines
++new lines
+===END===
+
+Diff anchors: after/before/replace/start/end. Lines with + are added, - are removed.
 
 GOAL RULES:
 - PRESERVE all function names, prop names, type names from the skeleton goal
@@ -44,10 +60,35 @@ pub const FINAL_PROMPT: &str = "\
 You are a file implementer. You receive a WORKING scaffold file and a detailed goal.
 Your job is to replace stub implementations with real, complete code.
 
-YOUR OUTPUT FORMAT (follow EXACTLY):
+OUTPUT FORMAT — choose based on task:
+
+FOR NEW FILES (Create) or SMALL FILES (under 100 lines):
 ===CODE===
-(complete implemented source code — every line, first to last)
+(complete source code — every line)
 ===END===
+
+FOR EDITING LARGE EXISTING FILES (over 100 lines):
+Use diff format to output ONLY the changes:
+===DIFF===
+@@ after: line text to anchor after @@
++new line to insert
++another new line
+
+@@ replace: line text to find and replace @@
+-old line to remove
++new replacement line
+
+@@ before: line text to anchor before @@
++line to insert before anchor
+===END===
+
+Diff anchors:
+- @@ after: TEXT @@ — insert additions after the line containing TEXT
+- @@ before: TEXT @@ — insert additions before the line containing TEXT
+- @@ replace: TEXT @@ — remove lines starting at TEXT, add replacements
+- @@ start @@ — insert at file beginning
+- @@ end @@ — insert at file end
+- Lines starting with + are added, lines starting with - are removed
 
 CRITICAL RULES:
 1. PRESERVE all import statements EXACTLY as they are in the scaffold.

@@ -34,6 +34,17 @@ enum Command {
         /// Review plan before executing.
         #[arg(long)]
         review: bool,
+
+        /// Dump all prompts/contexts to .parton/debug/.
+        #[arg(long)]
+        debug: bool,
+    },
+
+    /// Generate .parton/map project index for fast context.
+    Kyp {
+        /// Project directory.
+        #[arg(default_value = ".")]
+        path: std::path::PathBuf,
     },
 
     /// Configure providers and create parton.toml.
@@ -65,10 +76,15 @@ fn main() -> Result<()> {
             prompt,
             path,
             review,
+            debug,
         }) => {
             let prompt_str = prompt.join(" ");
             let project_root = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            commands::run::run(&prompt_str, &project_root, review)
+            commands::run::run(&prompt_str, &project_root, review, debug)
+        }
+        Some(Command::Kyp { path }) => {
+            let project_root = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            commands::kyp::run_kyp(&project_root)
         }
         Some(Command::Setup { path }) => {
             let project_root = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());

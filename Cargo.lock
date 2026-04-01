@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "parton"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "parton-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -1260,11 +1260,12 @@ dependencies = [
 
 [[package]]
 name = "parton-executor"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "futures-util",
  "parton-core",
+ "parton-graph",
  "serde",
  "serde_json",
  "tempfile",
@@ -1275,9 +1276,10 @@ dependencies = [
 
 [[package]]
 name = "parton-graph"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "dirs",
+ "futures-util",
  "parton-core",
  "reqwest",
  "serde",
@@ -1291,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "parton-knowledge"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "parton-core",
  "serde",
@@ -1302,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "parton-planner"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "futures-util",
  "parton-core",
@@ -1315,7 +1317,7 @@ dependencies = [
 
 [[package]]
 name = "parton-providers"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "parton-core",

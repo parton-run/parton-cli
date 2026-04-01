@@ -10,26 +10,39 @@ use parton_core::{FileAction, FilePlan, RunPlan};
 pub const SYSTEM_PROMPT: &str = "\
 You are a file writer. You receive a task and produce file content.
 
-YOUR OUTPUT FORMAT:
+OUTPUT FORMAT — choose based on task:
+
+FOR NEW FILES (Create) or SMALL FILES:
 ===CODE===
-(complete source code of the file)
+(complete source code)
+===END===
+
+FOR EDITING LARGE EXISTING FILES (over 100 lines):
+===DIFF===
+@@ after: anchor line text @@
++new lines to add
+
+@@ replace: anchor line text @@
+-old lines to remove
++new replacement lines
+
+@@ before: anchor line text @@
++lines to insert before anchor
 ===END===
 
 RULES:
-1. Between the markers: ONLY source code. Zero English words. Zero explanations.
-2. EDIT tasks: you receive the current file content. Output the COMPLETE updated file (every line, first to last) with your changes applied.
-3. CREATE tasks: output the complete new file.
-4. If no changes are needed for an EDIT: output the EXACT original file content unchanged between the markers.
-5. NEVER use markdown fences (```). Just raw code between ===CODE=== and ===END===.
-6. Export ALL symbols listed in MANDATORY Exports with EXACT names. Other parallel files import these names. If you rename or omit any, the build fails.
-7. Import ALL symbols listed in Import Interfaces with EXACT names from the specified paths.
+1. Between markers: ONLY code or diff lines. Zero English words. Zero explanations.
+2. CREATE tasks: always use ===CODE=== with complete file.
+3. EDIT tasks on small files: use ===CODE=== with complete updated file.
+4. EDIT tasks on large files (100+ lines): use ===DIFF=== with only changes.
+5. NEVER use markdown fences (```).
+6. Export ALL symbols listed in MANDATORY Exports with EXACT names.
+7. Import ALL symbols listed in Import Interfaces with EXACT names.
 
 ABSOLUTE REQUIREMENT:
-- You MUST ALWAYS output source code between ===CODE=== and ===END===.
-- NEVER output meta-text like '(no changes needed)' or '(file is unchanged)'.
-- NEVER explain what you did. NEVER describe the file. Just output the code.
-- If editing a file that needs zero changes, output the EXACT existing file content.
-- There is NO valid response without code between the markers.";
+- You MUST ALWAYS output between ===CODE=== or ===DIFF=== and ===END===.
+- NEVER output meta-text like '(no changes needed)'.
+- If editing a file with zero changes needed, output the EXACT original file with ===CODE===.";
 
 /// Build the per-file prompt from a file plan and run plan.
 ///

@@ -8,6 +8,8 @@
 //! - **Final** — full implementation preserving existing scaffold structure
 
 pub mod compliance;
+pub mod contract;
+pub mod diff;
 pub mod output;
 pub mod prompt;
 pub mod runner;

@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 parton-core = { path = "../parton-core" }
+parton-graph = { path = "../parton-graph" }
 tokio.workspace = true
 async-trait.workspace = true
 futures-util = "0.3"
