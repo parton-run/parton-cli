@@ -247,6 +247,7 @@ mod tests {
             concepts: vec![Concept {
                 name: "auth".into(),
                 paths: vec!["lib/auth/*.ts".into()],
+                tags: vec![],
                 symbols: vec![
                     MapSymbol {
                         name: "checkAdmin".into(),
@@ -280,6 +281,7 @@ mod tests {
             concepts: vec![Concept {
                 name: "db".into(),
                 paths: vec!["lib/db.ts".into()],
+                tags: vec![],
                 symbols: vec![MapSymbol {
                     name: "db".into(),
                     kind: SymKind::Variable,
